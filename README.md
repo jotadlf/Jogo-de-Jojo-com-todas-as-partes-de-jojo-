@@ -9,7 +9,7 @@ Requisitos: Node.js 20.19+ e npm. Execute `npm install` e `npm run dev`; abra o 
 
 ### Deploy
 
-O workflow `.github/workflows/deploy.yml` publica a pasta `dist` no GitHub Pages a cada push para `main` e executa `npm test` antes do build. Na primeira publicação, abra **Settings → Pages** no repositório e selecione **GitHub Actions** como fonte; acompanhe os jobs **build** e **deploy** na aba **Actions**. O Vite configura automaticamente o subcaminho do repositório no Pages, mantendo os assets e sprites acessíveis.
+O workflow `.github/workflows/deploy.yml` executa `actions/configure-pages`, roda `npm test` e publica a pasta `dist` no GitHub Pages a cada push para `main`. **Na primeira configuração, altere manualmente a fonte do Pages:** abra **Settings → Pages → Build and deployment → Source** e selecione **GitHub Actions**. Enquanto a fonte estiver como **Deploy from a branch**, o GitHub inicia um segundo deployment `pages-build-deployment`, que compete com este workflow e causa o erro “deployment in progress”. Depois da troca, acompanhe os jobs **build** e **deploy** na aba **Actions**. O Vite configura automaticamente o subcaminho do repositório, mantendo assets e sprites acessíveis. Execuções antigas deste workflow são canceladas para evitar concorrência entre pushes.
 
 ### Controles
 
