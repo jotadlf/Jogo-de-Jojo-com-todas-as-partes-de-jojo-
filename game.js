@@ -1733,13 +1733,51 @@ class BattleScene extends Phaser.Scene {
     buildRoster();
     resetBattle('campaign');
     $('#battle-message').textContent = `${selectedCharacter().name} enfrenta ${selectedCharacter().boss}. Derrote o chefe para liberar um novo poder.`;
+    this.renderInitialFrame();
+    this.loadSpritesInBackground();
+  }
+
+  renderInitialFrame() {
+    try {
+      draw();
+      arenaTexture.refresh();
+    } catch (error) {
+      this.reportRenderError(error);
+    }
+  }
+
+  async loadSpritesInBackground() {
+    try {
+      const loadedSprites = await loadSpriteImages((loaded, total) => {
+        if (loaded % 12 === 0 || loaded === total) $('#battle-message').textContent = `CARREGANDO RETRATOS · ${Math.floor(loaded / total * 100)}%`;
+      });
+      loadedSprites.forEach((sprite, key) => {
+        preparedSprites.set(key, sprite);
+        if (!this.textures.exists(key)) this.textures.addCanvas(key, sprite);
+      });
+      updateInterface(true);
+      $('#battle-message').textContent = `${selectedCharacter().name} enfrenta ${selectedCharacter().boss}. Derrote o chefe para liberar um novo poder.`;
+    } catch (error) {
+      console.error('Não foi possível carregar os retratos; usando os sprites de fallback.', error);
+      $('#battle-message').textContent = 'Alguns retratos não carregaram; a luta continua com o visual de fallback.';
+    }
   }
 
   update(_time, delta) {
-    const timestamp = performance.now();
-    update(Math.min(0.034, Math.max(0, delta / 1000)), timestamp);
-    draw();
-    arenaTexture.refresh();
+    try {
+      const timestamp = performance.now();
+      update(Math.min(0.034, Math.max(0, delta / 1000)), timestamp);
+      draw();
+      arenaTexture.refresh();
+    } catch (error) {
+      this.reportRenderError(error);
+    }
+  }
+
+  reportRenderError(error) {
+    console.error('Erro ao desenhar a arena Phaser.', error);
+    $('#battle-message').textContent = `ERRO NO DESENHO DA ARENA · ${error.message || 'consulte o console'}`;
+    this.scene.pause();
   }
 }
 
@@ -1765,17 +1803,13 @@ const gameConfig = {
   scene: [BattleScene],
 };
 
-async function startGame() {
-  const message = $('#battle-message');
-  message.textContent = 'CARREGANDO SPRITES · 0%';
-  const loadedSprites = await loadSpriteImages((loaded, total) => {
-    message.textContent = `CARREGANDO SPRITES · ${Math.floor(loaded / total * 100)}%`;
-  });
-  loadedSprites.forEach((sprite, key) => preparedSprites.set(key, sprite));
+function startGame() {
   new Phaser.Game(gameConfig);
 }
 
-startGame().catch((error) => {
+try {
+  startGame();
+} catch (error) {
   console.error('Não foi possível iniciar a arena Phaser.', error);
-  $('#battle-message').textContent = 'Não foi possível carregar a arena. Atualize a página para tentar novamente.';
-});
+  $('#battle-message').textContent = 'Não foi possível iniciar a arena. Atualize a página para tentar novamente.';
+}

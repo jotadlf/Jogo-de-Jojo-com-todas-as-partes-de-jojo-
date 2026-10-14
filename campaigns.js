@@ -5,7 +5,7 @@ const stage = (id, title, location, colors, enemyName, enemyHp, pattern, objecti
   title,
   location,
   palette: colors,
-  objective: { id: `${id}-objective`, kind: 'investigate', label: objective, x: 810, y: 330 },
+  objective: { id: `${id}-objective`, kind: 'investigate', label: objective, x: 610, y: 265 },
   enemies: (Array.isArray(enemyName) ? enemyName : [enemyName]).map((name, index) => ({
     id: `${id}-enemy-${index + 1}`,
     name,
