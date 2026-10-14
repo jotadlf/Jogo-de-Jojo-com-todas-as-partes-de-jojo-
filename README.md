@@ -7,6 +7,10 @@ Protótipo jogável de combate top-down feito com Phaser 3, física Arcade, Vite
 
 Requisitos: Node.js 20.19+ e npm. Execute `npm install` e `npm run dev`; abra o endereço local apresentado pelo Vite. Para gerar a versão de produção, execute `npm run build`. Execute `npm test` para verificar o catálogo e as regras de progressão.
 
+### Deploy
+
+O workflow `.github/workflows/deploy.yml` publica a pasta `dist` no GitHub Pages a cada push para `main` e executa `npm test` antes do build. Na primeira publicação, abra **Settings → Pages** no repositório e selecione **GitHub Actions** como fonte; acompanhe os jobs **build** e **deploy** na aba **Actions**. O Vite configura automaticamente o subcaminho do repositório no Pages, mantendo os assets e sprites acessíveis.
+
 ### Controles
 
 - `W`, `A`, `S`, `D` ou setas: movimentar
