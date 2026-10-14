@@ -25,8 +25,14 @@ Concluir uma campanha libera a seguinte. The JOJOLands termina nos capítulos re
 
 Vitórias, inimigos derrotados, objetivos, diálogos vistos, caminhos, recompensas e capítulo atual são registrados no `localStorage`. Reabrir o jogo retoma a etapa salva. Transições e eventos são idempotentes. O botão **REINICIAR PROGRESSO** apaga o progresso e desbloqueios deste navegador.
 
-O Phaser Arcade movimenta protagonista e inimigos com hitboxes reais, apresenta golpes telegrafados por padrões, limita o movimento à arena e testa os ataques contra os corpos físicos. A renderização pixel-art atual usa uma textura Canvas no ciclo de cena Phaser.
+O Phaser Arcade movimenta protagonista e inimigos com hitboxes reais, apresenta golpes telegrafados por padrões, limita o movimento à arena e testa os ataques contra os corpos físicos. A cena registra os retratos tratados como texturas Phaser e desenha a textura Canvas no ciclo do engine.
+
+### Sprites
+
+O registro `sprite-assets.js` associa protagonistas a `Jojo-Sprite/Protagonista`, chefes finais a `Chefe-Final`, antagonistas a `Boss-Secundário`, aliados a `Aliados-do-Protagonista` e DIO Over Heaven a `Chefe-Secreto`. A busca ignora diferenças entre maiúsculas, acentos, espaços e sufixos comuns; também inclui aliases para nomes como `JotaroAnime3`, `Johnny_anime_png`, `Wii A Zeppiin` e `Wonder Of You + Toru`. Se não encontra correspondência na pasta esperada, mantém o fallback em vez de mostrar outra pessoa.
+
+Os arquivos com extensão `.jpeg` são carregados conforme a assinatura real (JPEG, PNG ou WebP). Retratos com fundo claro têm apenas os pixels claros conectados às bordas removidos durante a preparação; os arquivos originais não são alterados.
 
 ### Limites do protótipo
 
-Esta é uma primeira versão jogável das campanhas: as fases são missões resumidas com diálogos escritos, não adaptações completas cena a cena. Personagens, obstáculos e efeitos ainda são formas pixeladas desenhadas em código, sem sprites quadro a quadro, trilha sonora, cooperativo local ou mapas completos. Conteúdo original do jogo deve ser entendido como não oficial.
+Esta é uma primeira versão jogável das campanhas: as fases são missões resumidas com diálogos escritos, não adaptações completas cena a cena. Os retratos importados ainda não têm animação quadro a quadro; ataques, obstáculos e efeitos continuam desenhados em código. Ainda não há trilha sonora, cooperativo local ou mapas completos. Conteúdo original do jogo deve ser entendido como não oficial.

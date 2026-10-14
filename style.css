@@ -36,7 +36,8 @@ button { font: inherit; }
 .roster-entry { display: grid; grid-template-columns: 28px 1fr; gap: 9px; align-items: center; min-height: 47px; padding: 5px; color: #a9b0aa; background: transparent; text-align: left; border: 1px solid transparent; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
 .roster-entry:hover { background: #ffffff09; color: var(--paper); }
 .roster-entry.selected { background: #d3e85a13; border-color: #d3e85a55; color: var(--paper); }
-.portrait-chip { width: 27px; height: 32px; display: grid; place-items: center; background: #384139; color: var(--lime); border-bottom: 2px solid var(--portrait-color, var(--lime)); font: 800 17px 'Barlow Condensed', sans-serif; image-rendering: pixelated; }
+.portrait-chip { width: 27px; height: 32px; display: grid; place-items: center; overflow: hidden; background: #384139; color: var(--lime); border-bottom: 2px solid var(--portrait-color, var(--lime)); font: 800 17px 'Barlow Condensed', sans-serif; image-rendering: pixelated; }
+.portrait-chip img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 16%; }
 .roster-entry.selected .portrait-chip { background: var(--portrait-color, #d3e85a); color: var(--ink); }
 .roster-entry strong { display: block; font: 700 14px/1 'Barlow Condensed', sans-serif; }
 .roster-entry small { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; }

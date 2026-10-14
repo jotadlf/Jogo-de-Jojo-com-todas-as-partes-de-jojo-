@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { campaigns, getCampaignForCharacter } from './campaigns.js';
+import { allySprite, characterSprite, loadSpriteImages, resolveSpriteAsset } from './sprite-assets.js';
 import {
   normalizeSave,
   STORY_PHASES,
@@ -26,6 +27,7 @@ let arenaSurface;
 let arenaTexture;
 let gameScene;
 let physicsObjects = [];
+const preparedSprites = new Map();
 
 const makeSkill = (id, name, type, damage, range, energy, cooldown, duration, effect, animation, tier) => ({
   id, name, type, damage, range, energy, cooldown, duration, effect, animation, tier,
@@ -111,6 +113,11 @@ const characters = [
     ],
   },
 ];
+
+characters.forEach((character) => {
+  character.spriteAsset = characterSprite(character);
+  if (!character.spriteAsset) console.warn(`Sprite de protagonista não encontrado: ${character.name}`);
+});
 
 const bosses = [
   { id: 'dio1', name: 'DIO BRANDO', x: 720, y: 245, hp: 400, color: '#bd6852', size: 1.1 },
@@ -528,23 +535,37 @@ function buildRoster() {
   roster.innerHTML = '';
   characters.forEach((character, index) => {
     const unlocked = hasCampaignAccess(character.id);
+    const portrait = character.spriteAsset ? preparedSprites.get(character.spriteAsset.key) : null;
+    character.portraitDataUrl ||= portrait?.toDataURL('image/png');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `roster-entry${index === state.selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
     button.disabled = !unlocked;
     button.title = unlocked ? `Campanha de ${character.name}` : 'Conclua a campanha anterior para liberar este protagonista.';
     button.setAttribute('aria-label', `Selecionar ${character.name}, Parte ${character.part}`);
-    button.innerHTML = `<span class="portrait-chip" style="--portrait-color:${character.color}">${character.short[0]}</span><span><strong>${character.short}</strong><small>PARTE ${String(character.part).padStart(2, '0')}</small></span>`;
+    button.innerHTML = `<span class="portrait-chip" style="--portrait-color:${character.color}">${character.portraitDataUrl ? `<img src="${character.portraitDataUrl}" alt="">` : character.short[0]}</span><span><strong>${character.short}</strong><small>PARTE ${String(character.part).padStart(2, '0')}</small></span>`;
     button.addEventListener('click', () => selectCharacter(index));
     roster.append(button);
   });
 }
 
 function currentBossTemplate() { return bosses[state.selected]; }
+const allyNames = new Set(['will a. zeppeli', 'noriaki kakyoin', 'avdol', 'jean pierre polnareff', 'bruno bucciarati', 'foo fighters']);
+function enemySpriteAsset(enemy, campaign = selectedCampaign()) {
+  const names = [enemy.name, enemy.id];
+  if (campaign?.id === 'jotaro' && enemy.name.toLowerCase() === 'dio') names.push('Dio_3');
+  if (campaign?.id === 'josuke4' && enemy.name.toLowerCase().includes('kira')) names.push('Kira_2');
+  const finalBossSprite = resolveSpriteAsset('finalBoss', names);
+  if (finalBossSprite) return finalBossSprite;
+  if (allyNames.has(enemy.name.toLowerCase())) return resolveSpriteAsset('ally', enemy.name);
+  return resolveSpriteAsset('antagonist', names);
+}
 function createCampaignBoss(stage = state.storyStage) {
+  const campaign = selectedCampaign();
   const templates = stage?.enemies || [currentBossTemplate()];
   state.enemies = templates.map((template) => ({
     ...template,
+    spriteAsset: enemySpriteAsset(template, campaign),
     hp: template.hp,
     maxHp: template.hp,
     attackTimer: 1.2,
@@ -561,6 +582,9 @@ function createFinalBosses(secondPhase = false) {
   const multiplier = secondPhase ? 3 : 1;
   state.enemies = finalBosses.map((boss) => ({
     ...boss,
+    spriteAsset: boss.id === 'dio-heaven'
+      ? resolveSpriteAsset('secretBoss', 'Dio Over Heaven')
+      : resolveSpriteAsset('finalBoss', 'Enrico Pucci', 'Pucci'),
     hp: boss.hp * multiplier,
     maxHp: boss.hp * multiplier,
     attackTimer: boss.attackTimer,
@@ -588,6 +612,7 @@ function createSecretRevengeBoss() {
   state.storyStage = campaign.stages.at(-1);
   state.enemies = [{
     ...encounter,
+    spriteAsset: enemySpriteAsset({ ...encounter, name: campaign.secretBoss }, campaign),
     x: 710,
     y: 260,
     size: 1.16,
@@ -1376,13 +1401,39 @@ function drawDepthRails() {
   }
 }
 
-function drawFighter(x, y, color, isPlayer, scale = 1, facingX = 1, hitFlash = 0, animation = 0) {
+function getPreparedSprite(spriteAsset) {
+  return spriteAsset ? preparedSprites.get(spriteAsset.key) || null : null;
+}
+
+function drawFighter(x, y, color, isPlayer, scale = 1, facingX = 1, hitFlash = 0, animation = 0, spriteAsset = null) {
   const spriteScale = 1.8 * scale;
   const bob = animation ? Math.sin(state.elapsed * 26) * 2 : Math.sin(state.elapsed * 4 + x) * 0.6;
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y + bob));
   ctx.scale(facingX < 0 ? -1 : 1, 1);
   ctx.imageSmoothingEnabled = false;
+  const sprite = getPreparedSprite(spriteAsset);
+  if (sprite) {
+    const ratio = sprite.width / sprite.height;
+    const targetHeight = 104 * scale;
+    const targetWidth = Math.min(targetHeight * ratio, 78 * scale);
+    const drawnHeight = Math.min(targetHeight, targetWidth / ratio);
+    const scalePulse = animation ? 1 + Math.sin(state.elapsed * 34) * 0.025 : 1;
+    ctx.fillStyle = '#10151288';
+    ctx.beginPath();
+    ctx.ellipse(0, 9 * spriteScale, 13 * spriteScale, 4 * spriteScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(sprite, -targetWidth * scalePulse / 2, -drawnHeight * scalePulse + 8, targetWidth * scalePulse, drawnHeight * scalePulse);
+    if (hitFlash > 0) {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = '#ffffff88';
+      ctx.fillRect(-targetWidth / 2, -drawnHeight + 8, targetWidth, drawnHeight);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = '#11151088';
   ctx.fillRect(-15 * spriteScale, 9 * spriteScale, 31 * spriteScale, 6 * spriteScale);
   if (isPlayer && state.selected === 2 && state.jotaroAwakened && state.mode === 'final') {
@@ -1517,7 +1568,7 @@ function draw() {
   if (state.screenShake > 0) ctx.translate((Math.random() - 0.5) * state.screenShake, (Math.random() - 0.5) * state.screenShake);
   drawBackground();
   const drawables = state.enemies.filter((enemy) => enemy.hp > 0).map((enemy) => ({ y: enemy.y, draw: () => {
-    drawFighter(enemy.x, enemy.y, enemy.hitFlash > 0 ? '#ffffff' : enemy.color, false, enemy.size, state.player.x < enemy.x ? -1 : 1, enemy.hitFlash);
+    drawFighter(enemy.x, enemy.y, enemy.hitFlash > 0 ? '#ffffff' : enemy.color, false, enemy.size, state.player.x < enemy.x ? -1 : 1, enemy.hitFlash, 0, enemy.spriteAsset);
     if (enemy.empowered) {
       ctx.globalAlpha = 0.4 + Math.sin(state.elapsed * 7) * 0.13;
       ctx.strokeStyle = enemy.id === 'dio-heaven' ? '#f0d75a' : '#e18dca';
@@ -1546,7 +1597,7 @@ function draw() {
       drawFighter(state.player.x + 24, state.player.y - 8, '#edc857', false, 0.88, state.player.facingX, 0, state.player.attackTimer);
       ctx.globalAlpha = 1;
     }
-    drawFighter(state.player.x, state.player.y, state.player.hitFlash > 0 ? '#fff' : character.color, true, 1, state.player.facingX, state.player.hitFlash, state.player.attackTimer);
+    drawFighter(state.player.x, state.player.y, state.player.hitFlash > 0 ? '#fff' : character.color, true, 1, state.player.facingX, state.player.hitFlash, state.player.attackTimer, character.spriteAsset);
     ctx.fillStyle = '#fff6cf';
     ctx.font = '9px "DM Mono", monospace';
     ctx.textAlign = 'center';
@@ -1556,7 +1607,8 @@ function draw() {
     drawables.push({ y: state.player.y + 12, draw: () => {
     const fade = Math.min(1, state.assist.time / 0.35, (state.assist.maxTime - state.assist.time) / 0.2 + 1);
     ctx.globalAlpha = Math.max(0, fade);
-    drawFighter(state.player.x - 43, state.player.y + 12, state.assist.character.id === 'jotaro' ? '#f0d75a' : state.assist.character.color, false, 0.92, 1, 0, 1);
+    const allyAsset = state.assist.character.id === 'jotaro' ? state.assist.character.spriteAsset : allySprite(state.assist.character) || state.assist.character.spriteAsset;
+    drawFighter(state.player.x - 43, state.player.y + 12, state.assist.character.id === 'jotaro' ? '#f0d75a' : state.assist.character.color, false, 0.92, 1, 0, 1, allyAsset);
     ctx.globalAlpha = 1;
     } });
   }
@@ -1669,6 +1721,7 @@ class BattleScene extends Phaser.Scene {
   create() {
     gameScene = this;
     this.physics.world.setBounds(18, 80, ARENA_WIDTH - 36, ARENA_HEIGHT - 98);
+    preparedSprites.forEach((sprite, key) => this.textures.addCanvas(key, sprite));
     const drawingCanvas = document.createElement('canvas');
     drawingCanvas.width = ARENA_WIDTH;
     drawingCanvas.height = ARENA_HEIGHT;
@@ -1690,7 +1743,7 @@ class BattleScene extends Phaser.Scene {
   }
 }
 
-new Phaser.Game({
+const gameConfig = {
   type: Phaser.AUTO,
   parent: 'game',
   width: ARENA_WIDTH,
@@ -1710,4 +1763,19 @@ new Phaser.Game({
     arcade: { debug: false, gravity: { x: 0, y: 0 } },
   },
   scene: [BattleScene],
+};
+
+async function startGame() {
+  const message = $('#battle-message');
+  message.textContent = 'CARREGANDO SPRITES · 0%';
+  const loadedSprites = await loadSpriteImages((loaded, total) => {
+    message.textContent = `CARREGANDO SPRITES · ${Math.floor(loaded / total * 100)}%`;
+  });
+  loadedSprites.forEach((sprite, key) => preparedSprites.set(key, sprite));
+  new Phaser.Game(gameConfig);
+}
+
+startGame().catch((error) => {
+  console.error('Não foi possível iniciar a arena Phaser.', error);
+  $('#battle-message').textContent = 'Não foi possível carregar a arena. Atualize a página para tentar novamente.';
 });
