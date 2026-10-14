@@ -1,11 +1,25 @@
 import Phaser from 'phaser';
+import { campaigns, getCampaignForCharacter } from './campaigns.js';
+import {
+  normalizeSave,
+  STORY_PHASES,
+  completeStage,
+  createSecretEncounter,
+  finishStage,
+  recordBattleVictory,
+  recordDialogue,
+  recordEnvironmentChange,
+  recordObjective,
+  recordSecretBossVictory,
+  transitionPhase,
+  unlockCampaignAfterCompletion,
+} from './story-progression.js';
 
 const $ = (selector) => document.querySelector(selector);
 const ARENA_WIDTH = 960;
 const ARENA_HEIGHT = 540;
 const canvas = { width: ARENA_WIDTH, height: ARENA_HEIGHT };
 const STORAGE_KEY = 'eternal-destiny-save-v1';
-const SAVE_DEFAULT = { advanced: [], supreme: [], victories: [] };
 const colorPalette = ['#d7d869', '#7bb5a4', '#bc8091', '#719bd0', '#d6ae54', '#91b8a2', '#d48a57', '#74b9c2', '#97b759'];
 let ctx;
 let arenaSurface;
@@ -113,28 +127,34 @@ const finalBosses = [
   { id: 'dio-heaven', name: 'DIO OVER HEAVEN', x: 711, y: 225, hp: 720, color: '#f0d75a', size: 1.23, attackTimer: 1.1 },
   { id: 'pucci-heaven', name: 'PUCCI · MADE IN HEAVEN', x: 775, y: 330, hp: 690, color: '#e18dca', size: 1.14, attackTimer: 2.2 },
 ];
-const assistCast = ['Joseph Joestar', 'Jotaro Kujo', 'Jolyne Cujoh', 'Giorno Giovanna', 'Jonathan Joestar', 'Josuke Higashikata', 'Johnny Joestar', 'Josuke Higashikata', 'Jodio Joestar'];
+const kakyoinSupport = {
+  id: 'kakyoin',
+  name: 'Noriaki Kakyoin',
+  stand: 'HIEROPHANT GREEN',
+  color: '#71a27c',
+  skills: [
+    { id: 'kakyoin-emerald-splash', name: 'Emerald Splash', damage: 132, range: 310, stun: 0.8 },
+    { id: 'kakyoin-barrier', name: 'Hierophant Green · Barrier', damage: 105, range: 175, stun: 1.25 },
+  ],
+};
+const assistCast = ['Noriaki Kakyoin', 'Jolyne Cujoh', 'Joseph Joestar', 'Giorno Giovanna', 'Jonathan Joestar', 'Josuke Higashikata', 'Johnny Joestar', 'Josuke Higashikata', 'Jodio Joestar'];
 
 function loadSave() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (!saved || typeof saved !== 'object') return structuredClone(SAVE_DEFAULT);
-    return {
-      advanced: Array.isArray(saved.advanced) ? saved.advanced : [],
-      supreme: Array.isArray(saved.supreme) ? saved.supreme : [],
-      victories: Array.isArray(saved.victories) ? saved.victories : [],
-    };
+    return normalizeSave(JSON.parse(localStorage.getItem(STORAGE_KEY)), campaigns);
   } catch {
-    return structuredClone(SAVE_DEFAULT);
+    return normalizeSave(null, campaigns);
   }
 }
 
 const save = loadSave();
 const state = {
-  selected: 2,
+  selected: 0,
   mode: 'campaign',
   fightActive: true,
   secretPhase: 0,
+  secretRunPhase: null,
+  secretCampaignId: null,
   jotaroAwakened: false,
   player: { x: 250, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null },
   enemies: [],
@@ -151,12 +171,21 @@ const state = {
   cinematicUntil: 0,
   sound: false,
   nextUiUpdate: 0,
+  storyStage: null,
 };
 let audioContext;
 let toastTimeout;
 let unlockTimeout;
 
 function selectedCharacter() { return characters[state.selected]; }
+function selectedCampaign() { return getCampaignForCharacter(selectedCharacter().id); }
+function currentCampaignProgress(characterId = selectedCharacter().id) { return save.story.campaigns[characterId]; }
+function currentCampaignStage(characterId = selectedCharacter().id) {
+  const campaign = getCampaignForCharacter(characterId);
+  const progress = currentCampaignProgress(characterId);
+  return campaign && progress ? campaign.stages[progress.stageIndex] || null : null;
+}
+function hasCampaignAccess(characterId) { return save.story.unlockedCampaignIds.includes(characterId); }
 function isOverHeaven() { return state.mode === 'final' && state.secretPhase === 2 && state.jotaroAwakened && selectedCharacter().id === 'jotaro'; }
 function availableSkills() { return isOverHeaven() ? selectedCharacter().heavenSkills : selectedCharacter().skills; }
 function isUnlocked(skill, character = selectedCharacter()) {
@@ -168,13 +197,342 @@ function persistSave() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(save)); } catch { showToast('O salvamento local está indisponível neste navegador.'); }
 }
 
+function updateStoryPanel() {
+  const panel = $('#story-panel');
+  if (!panel) return;
+  const action = $('#story-action');
+  if (state.mode === 'final') {
+    action.hidden = false;
+    const campaign = currentSecretCampaign();
+    const stage = state.storyStage;
+    let kicker = 'HISTÓRIA SECRETA';
+    let location = '';
+    let title = '';
+    let text = '';
+    let objective = '';
+    let actionLabel = 'CONTINUAR';
+    let dialogueId = null;
+
+    if (state.secretRunPhase === 'revenge-intro' && campaign && stage) {
+      kicker = `REVANCHE · PARTE ${campaign.part} / ${campaigns.length}`;
+      location = stage.location.toUpperCase();
+      title = `${campaign.secretBoss} voltou mais forte`;
+      text = `A derrota anterior nao conteve ${campaign.secretBoss}. O chefe retornou com 50% a mais em seus atributos e percebeu a falha do primeiro encontro.`;
+      objective = `CHEFE FORTALECIDO · ${campaign.secretBoss.toUpperCase()} · +50% ATRIBUTOS`;
+      actionLabel = 'INICIAR REVANCHE';
+      dialogueId = `secret:${campaign.id}:intro`;
+    } else if (state.secretRunPhase === 'revenge-post' && campaign && stage) {
+      kicker = `VITÓRIA REGISTRADA · PARTE ${campaign.part} / ${campaigns.length}`;
+      location = stage.location.toUpperCase();
+      title = `${campaign.secretBoss} foi derrotado novamente`;
+      text = `A distorção causada nesta Parte diminuiu. ${stage.environmentChange}`;
+      objective = save.story.secretStageIndex < campaigns.length ? `PRÓXIMO CHEFE · ${campaigns[save.story.secretStageIndex].secretBoss}` : 'AS NOVE REVANCHES FORAM CONCLUÍDAS';
+      actionLabel = 'CONTINUAR A HISTÓRIA SECRETA';
+      dialogueId = `secret:${campaign.id}:victory`;
+    } else if (state.secretRunPhase === 'final-intro') {
+      kicker = 'AS NOVE PARTES · CONFRONTO FINAL';
+      location = 'ARENA FORA DO ESPAÇO-TEMPO';
+      title = 'A equipe contra DIO e Pucci';
+      text = 'Jotaro, Kakyoin e Jolyne abrem caminho contra Pucci com Made in Heaven e DIO Over Heaven. A primeira vitória dos vilões inicia uma transformação, não apaga o seu progresso.';
+      objective = 'CONFRONTO EM DUAS FASES · A ASSISTÊNCIA É MANUAL';
+      actionLabel = 'REUNIR A EQUIPE';
+    } else if (state.secretRunPhase === 'complete') {
+      kicker = 'ETERNAL DESTINY · CONCLUÍDO';
+      location = 'O ESPAÇO-TEMPO SE ESTABILIZOU';
+      title = 'A ameaça chegou ao fim';
+      text = 'A distorção desaparece e os nove protagonistas conseguem voltar às suas jornadas.';
+      objective = 'VITÓRIA · HISTÓRIA SECRETA ENCERRADA';
+      action.hidden = true;
+    } else {
+      panel.hidden = true;
+      return;
+    }
+
+    if (dialogueId && campaign) {
+      const progress = currentCampaignProgress(campaign.id);
+      if (recordDialogue(progress, dialogueId)) persistSave();
+    }
+    $('#story-kicker').textContent = kicker;
+    $('#story-location').textContent = location;
+    $('#story-title').textContent = title;
+    $('#story-text').textContent = text;
+    $('#story-objective').textContent = objective;
+    action.textContent = actionLabel;
+    action.disabled = false;
+    panel.hidden = false;
+    return;
+  }
+  if (state.mode !== 'campaign') {
+    if (panel) panel.hidden = true;
+    return;
+  }
+  const campaign = selectedCampaign();
+  const progress = currentCampaignProgress();
+  const stage = currentCampaignStage();
+  let kicker = `${campaign.protagonist.toUpperCase()} · PARTE ${campaign.part}`;
+  let location = '';
+  let title = '';
+  let text = '';
+  let objective = '';
+  let actionLabel = 'CONTINUAR';
+  let dialogueId = null;
+
+  if (!stage || progress.phase === STORY_PHASES.CAMPAIGN_COMPLETE) {
+    kicker = 'CAMPANHA CONCLUÍDA';
+    location = campaign.openEnded ? 'CAPÍTULOS REPRESENTADOS · HISTÓRIA ABERTA' : campaign.title.toUpperCase();
+    title = campaign.openEnded ? 'O caminho continua' : `${campaign.protagonist} · jornada concluída`;
+    text = campaign.openEnded
+      ? 'Os capítulos representados neste protótipo foram concluídos. The JOJOLands permanece sem um desfecho definitivo; esta campanha pode receber novas fases.'
+      : `A jornada de ${campaign.protagonist} chegou ao seu encerramento. O próximo protagonista está disponível.`;
+    objective = save.story.secretUnlocked ? 'As nove campanhas estão completas. A história secreta foi liberada.' : 'Seu progresso está salvo. Escolha o protagonista liberado para continuar.';
+    actionLabel = 'VER PRÓXIMA ETAPA';
+    action.hidden = true;
+  } else {
+    location = stage.location.toUpperCase();
+    switch (progress.phase) {
+      case STORY_PHASES.INTRO:
+        title = stage.title;
+        text = stage.dialogue.intro;
+        objective = `FASE ${progress.stageIndex + 1} / ${campaign.stages.length}`;
+        actionLabel = 'ENTRAR NA ÁREA';
+        dialogueId = `${stage.id}:intro`;
+        break;
+      case STORY_PHASES.EXPLORATION:
+        title = 'Reconheça o local';
+        text = `Observe ${stage.location.toLowerCase()} antes do confronto. A investigação prepara a pista que será usada nesta fase.`;
+        objective = `PRÓXIMO OBJETIVO · ${stage.objective.label}`;
+        actionLabel = 'EXPLORAR';
+        break;
+      case STORY_PHASES.OBJECTIVE_ACTIVE:
+        title = 'Investigue o cenário';
+        text = `A pista está marcada na arena. Aproxime-se dela e pressione F para ${stage.objective.label.toLowerCase()}.`;
+        objective = 'OBJETIVO ATIVO · LOCALIZE O MARCADOR';
+        actionLabel = 'APROXIME-SE DA PISTA';
+        action.disabled = true;
+        break;
+      case STORY_PHASES.ENEMY_ENCOUNTER:
+        title = stage.enemies.map((enemy) => enemy.name).join(' e ');
+        text = stage.dialogue.encounter;
+        objective = `CONFRONTO · ${stage.enemies.length} ${stage.enemies.length === 1 ? 'INIMIGO' : 'INIMIGOS'}`;
+        actionLabel = 'INICIAR CONFRONTO';
+        dialogueId = `${stage.id}:encounter`;
+        break;
+      case STORY_PHASES.BOSS_FIGHT:
+        panel.hidden = true;
+        return;
+      case STORY_PHASES.POST_BATTLE:
+        title = 'A luta mudou o rumo';
+        text = stage.dialogue.victory;
+        objective = `CONSEQUÊNCIA · ${stage.environmentChange}`;
+        actionLabel = 'VER CONSEQUÊNCIAS';
+        dialogueId = `${stage.id}:victory`;
+        break;
+      case STORY_PHASES.ENVIRONMENT_CHANGED:
+        title = 'O cenário mudou';
+        text = stage.environmentChange;
+        objective = 'A alteração do ambiente abre um caminho para a próxima fase.';
+        actionLabel = 'LIBERAR CAMINHO';
+        break;
+      case STORY_PHASES.NEXT_STAGE_UNLOCKED:
+        title = 'Próximo trecho desbloqueado';
+        text = `A pista e o caminho desta batalha foram registrados. ${campaign.protagonist} pode seguir adiante.`;
+        objective = stage.pathId.toUpperCase();
+        actionLabel = 'CONCLUIR FASE';
+        break;
+      case STORY_PHASES.STAGE_COMPLETE:
+        title = `${stage.title} · concluída`;
+        text = stage.dialogue.victory;
+        objective = progress.stageIndex + 1 < campaign.stages.length ? 'O próximo capítulo será iniciado.' : 'Esta era a última fase representada nesta campanha.';
+        actionLabel = 'AVANÇAR HISTÓRIA';
+        break;
+      default:
+        panel.hidden = true;
+        return;
+    }
+    action.hidden = progress.phase === STORY_PHASES.OBJECTIVE_ACTIVE;
+    action.disabled = false;
+  }
+
+  if (dialogueId && recordDialogue(progress, dialogueId)) persistSave();
+  $('#story-kicker').textContent = kicker;
+  $('#story-location').textContent = location;
+  $('#story-title').textContent = title;
+  $('#story-text').textContent = text;
+  $('#story-objective').textContent = objective;
+  action.textContent = actionLabel;
+  panel.hidden = false;
+}
+
+function changeStoryPhase(nextPhase, eventId) {
+  const progress = currentCampaignProgress();
+  if (!transitionPhase(progress, nextPhase, eventId)) return false;
+  persistSave();
+  if (nextPhase === STORY_PHASES.BOSS_FIGHT) {
+    createCampaignBoss(state.storyStage);
+    state.fightActive = true;
+  } else {
+    state.fightActive = false;
+    state.enemies = [];
+    attachPhysicsBodies();
+  }
+  updateStoryPanel();
+  updateInterface(true);
+  return true;
+}
+
+function interactWithStoryObjective() {
+  if (state.mode !== 'campaign') return;
+  const progress = currentCampaignProgress();
+  const stage = state.storyStage;
+  if (!stage || progress.phase !== STORY_PHASES.OBJECTIVE_ACTIVE) return;
+  const objective = stage.objective;
+  if (distance(state.player, objective) > 86) {
+    showToast('Aproxime-se do marcador para investigar.');
+    return;
+  }
+  if (!recordObjective(progress, objective.id)) return;
+  progress.flags[`objective:${objective.id}`] = true;
+  progress.phase = STORY_PHASES.ENEMY_ENCOUNTER;
+  progress.processedEventIds.push(`objective:${objective.id}`);
+  recordDialogue(progress, `${stage.id}:encounter`);
+  persistSave();
+  state.fightActive = false;
+  updateStoryPanel();
+  updateInterface(true);
+  playTone(630, 0.1);
+}
+
+function continueSecretStory() {
+  const campaign = currentSecretCampaign();
+  if (state.secretRunPhase === 'revenge-intro' && campaign) {
+    if (!createSecretRevengeBoss()) return;
+    state.secretRunPhase = 'revenge-battle';
+    state.fightActive = true;
+    state.player.hp = state.player.maxHp;
+    state.player.physicsZone?.setPosition(state.player.x, state.player.y);
+    updateStoryPanel();
+    updateInterface(true);
+    $('#battle-message').textContent = `${campaign.protagonist} enfrenta ${campaign.secretBoss}, agora fortalecido.`;
+    return;
+  }
+
+  if (state.secretRunPhase === 'revenge-post' && campaign) {
+    state.player.hp = state.player.maxHp;
+    state.player.energy = state.player.maxEnergy;
+    state.cooldowns = {};
+    state.player.x = 250;
+    state.player.y = 320;
+    if (save.story.secretStageIndex < campaigns.length) {
+      state.secretCampaignId = campaigns[save.story.secretStageIndex].id;
+      state.storyStage = currentSecretCampaign().stages.at(-1);
+      state.secretRunPhase = 'revenge-intro';
+      state.enemies = [];
+    } else {
+      state.secretCampaignId = null;
+      state.storyStage = null;
+      state.secretRunPhase = 'final-intro';
+      state.enemies = [];
+    }
+    attachPhysicsBodies();
+    persistSave();
+    updateStoryPanel();
+    updateInterface(true);
+    return;
+  }
+
+  if (state.secretRunPhase === 'final-intro') {
+    state.secretRunPhase = 'final-battle';
+    state.secretPhase = 0;
+    state.jotaroAwakened = false;
+    state.fightActive = true;
+    state.storyStage = null;
+    state.player.hp = state.player.maxHp;
+    state.player.energy = state.player.maxEnergy;
+    createFinalBosses();
+    updateStoryPanel();
+    updateInterface(true);
+    $('#battle-message').textContent = 'Jotaro, Kakyoin e Jolyne enfrentam DIO Over Heaven e Pucci com Made in Heaven.';
+  }
+}
+
+function continueStory() {
+  if (state.mode === 'final') {
+    continueSecretStory();
+    return;
+  }
+  const campaign = selectedCampaign();
+  const progress = currentCampaignProgress();
+  const stage = state.storyStage;
+  if (!stage) return;
+
+  switch (progress.phase) {
+    case STORY_PHASES.INTRO:
+      changeStoryPhase(STORY_PHASES.EXPLORATION, `enter:${stage.id}`);
+      break;
+    case STORY_PHASES.EXPLORATION:
+      changeStoryPhase(STORY_PHASES.OBJECTIVE_ACTIVE, `explore:${stage.id}`);
+      break;
+    case STORY_PHASES.ENEMY_ENCOUNTER:
+      changeStoryPhase(STORY_PHASES.BOSS_FIGHT, `fight:${stage.id}`);
+      break;
+    case STORY_PHASES.POST_BATTLE:
+      changeStoryPhase(STORY_PHASES.ENVIRONMENT_CHANGED, `change:${stage.id}`);
+      break;
+    case STORY_PHASES.ENVIRONMENT_CHANGED:
+      if (recordEnvironmentChange(progress, stage)) {
+        persistSave();
+        updateStoryPanel();
+        updateInterface(true);
+      }
+      break;
+    case STORY_PHASES.NEXT_STAGE_UNLOCKED:
+      if (finishStage(progress, stage)) {
+        persistSave();
+        updateStoryPanel();
+        updateInterface(true);
+      }
+      break;
+    case STORY_PHASES.STAGE_COMPLETE: {
+      const wasFinalStage = progress.stageIndex === campaign.stages.length - 1;
+      if (!completeStage(progress, campaign)) return;
+      if (wasFinalStage) {
+        unlockCampaignAfterCompletion(save, campaign, campaigns);
+        if (save.story.secretUnlocked) showUnlock('HISTÓRIA SECRETA DESBLOQUEADA');
+        else {
+          const nextCampaign = campaigns.find((entry) => save.story.unlockedCampaignIds.includes(entry.id) && entry.id !== campaign.id);
+          if (nextCampaign) showUnlock(`${nextCampaign.protagonist} · NOVA CAMPANHA`);
+          else showUnlock('CAPÍTULOS REPRESENTADOS CONCLUÍDOS');
+        }
+        state.storyStage = null;
+        state.enemies = [];
+        state.fightActive = false;
+        attachPhysicsBodies();
+      } else {
+        state.storyStage = currentCampaignStage();
+        state.player.x = 250;
+        state.player.y = 320;
+        state.enemies = [];
+        state.fightActive = false;
+        attachPhysicsBodies();
+      }
+      persistSave();
+      updateStoryPanel();
+      updateInterface(true);
+      break;
+    }
+  }
+}
+
 function buildRoster() {
   const roster = $('#roster');
   roster.innerHTML = '';
   characters.forEach((character, index) => {
+    const unlocked = hasCampaignAccess(character.id);
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `roster-entry${index === state.selected ? ' selected' : ''}`;
+    button.className = `roster-entry${index === state.selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`;
+    button.disabled = !unlocked;
+    button.title = unlocked ? `Campanha de ${character.name}` : 'Conclua a campanha anterior para liberar este protagonista.';
     button.setAttribute('aria-label', `Selecionar ${character.name}, Parte ${character.part}`);
     button.innerHTML = `<span class="portrait-chip" style="--portrait-color:${character.color}">${character.short[0]}</span><span><strong>${character.short}</strong><small>PARTE ${String(character.part).padStart(2, '0')}</small></span>`;
     button.addEventListener('click', () => selectCharacter(index));
@@ -183,9 +541,20 @@ function buildRoster() {
 }
 
 function currentBossTemplate() { return bosses[state.selected]; }
-function createCampaignBoss() {
-  const template = currentBossTemplate();
-  state.enemies = [{ ...template, hp: template.hp, maxHp: template.hp, attackTimer: 1.2, stun: 0, slow: 0, marked: 0, hitFlash: 0 }];
+function createCampaignBoss(stage = state.storyStage) {
+  const templates = stage?.enemies || [currentBossTemplate()];
+  state.enemies = templates.map((template) => ({
+    ...template,
+    hp: template.hp,
+    maxHp: template.hp,
+    attackTimer: 1.2,
+    attackWindup: 0,
+    attackTarget: null,
+    stun: 0,
+    slow: 0,
+    marked: 0,
+    hitFlash: 0,
+  }));
   attachPhysicsBodies();
 }
 function createFinalBosses(secondPhase = false) {
@@ -200,8 +569,70 @@ function createFinalBosses(secondPhase = false) {
     marked: 0,
     hitFlash: 0,
     empowered: secondPhase,
+    pattern: 'temporal',
+    attackRange: 125,
+    attackDamage: secondPhase ? 24 : 12,
+    attackInterval: secondPhase ? 1.05 : 1.4,
+    attackWindup: 0,
+    attackTarget: null,
   }));
   attachPhysicsBodies();
+}
+function currentSecretCampaign() { return campaigns.find((campaign) => campaign.id === state.secretCampaignId) || campaigns[save.story.secretStageIndex] || null; }
+function createSecretRevengeBoss() {
+  const campaign = currentSecretCampaign();
+  if (!campaign) return false;
+  const candidate = campaign.stages.flatMap((stage) => stage.enemies).find((enemy) => enemy.name.toLowerCase() === campaign.secretBoss.toLowerCase());
+  const fallback = campaign.stages.at(-1).enemies.at(-1);
+  const encounter = createSecretEncounter(campaign, candidate || fallback);
+  state.storyStage = campaign.stages.at(-1);
+  state.enemies = [{
+    ...encounter,
+    x: 710,
+    y: 260,
+    size: 1.16,
+    attackTimer: 1.15,
+    attackWindup: 0,
+    attackTarget: null,
+    stun: 0,
+    slow: 0,
+    marked: 0,
+    hitFlash: 0,
+  }];
+  attachPhysicsBodies();
+  return true;
+}
+function prepareSecretMode() {
+  state.secretPhase = save.story.secretFinalPhase;
+  state.jotaroAwakened = state.secretPhase === 2;
+  if (save.story.secretStageIndex < campaigns.length) {
+    state.secretCampaignId = campaigns[save.story.secretStageIndex].id;
+    state.secretRunPhase = 'revenge-intro';
+    state.storyStage = currentSecretCampaign().stages.at(-1);
+    state.fightActive = false;
+    state.enemies = [];
+    attachPhysicsBodies();
+    return;
+  }
+  if (!save.story.secretFinalAvailable || save.story.secretFinalComplete) {
+    state.secretCampaignId = null;
+    state.secretRunPhase = save.story.secretFinalComplete ? 'complete' : 'final-intro';
+    state.fightActive = false;
+    state.enemies = [];
+    attachPhysicsBodies();
+    return;
+  }
+  if (state.secretPhase >= 1) {
+    state.secretCampaignId = null;
+    state.secretRunPhase = 'final-battle';
+    createFinalBosses(state.secretPhase === 2);
+  } else {
+    state.secretCampaignId = null;
+    state.secretRunPhase = 'final-intro';
+    state.fightActive = false;
+    state.enemies = [];
+    attachPhysicsBodies();
+  }
 }
 function attachPhysicsBodies() {
   if (!gameScene) return;
@@ -223,8 +654,10 @@ function attachPhysicsBodies() {
 function resetBattle(mode = state.mode) {
   state.mode = mode;
   state.secretPhase = 0;
+  state.secretRunPhase = null;
+  state.secretCampaignId = null;
   state.jotaroAwakened = false;
-  state.player = { x: 250, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0 };
+  state.player = { x: 250, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null };
   state.cooldowns = {};
   state.effects = [];
   state.particles = [];
@@ -236,8 +669,18 @@ function resetBattle(mode = state.mode) {
   state.cinematicUntil = 0;
   $('#cinematic').classList.remove('active');
   $('#cinematic').setAttribute('aria-hidden', 'true');
-  if (mode === 'final') createFinalBosses();
-  else createCampaignBoss();
+  if (mode === 'final') {
+    state.storyStage = null;
+    prepareSecretMode();
+  } else {
+    state.storyStage = currentCampaignStage();
+    if (currentCampaignProgress().phase === STORY_PHASES.BOSS_FIGHT && state.storyStage) createCampaignBoss();
+    else {
+      state.enemies = [];
+      attachPhysicsBodies();
+    }
+    updateStoryPanel();
+  }
   updateInterface(true);
   buildRoster();
 }
@@ -247,24 +690,31 @@ function selectCharacter(index) {
     showToast('Termine esta batalha para escolher outro protagonista.');
     return;
   }
+  const character = characters[index];
+  if (!hasCampaignAccess(character.id)) {
+    showToast('Conclua a campanha anterior para liberar este protagonista.');
+    return;
+  }
+  if (state.mode === 'campaign' && state.fightActive && index !== state.selected) {
+    showToast('Conclua a luta atual antes de trocar de protagonista.');
+    return;
+  }
   state.selected = index;
   state.mode = 'campaign';
   resetBattle('campaign');
 }
 
 function switchMode(mode) {
+  if (mode === 'final' && !save.story.secretUnlocked) {
+    showToast('Conclua os capítulos disponíveis das nove campanhas para liberar esta história.');
+    return;
+  }
   if (mode === state.mode && state.fightActive) return;
+  if (mode === 'final') state.selected = characters.findIndex((character) => character.id === 'jotaro');
   state.mode = mode;
   resetBattle(mode);
-  if (mode === 'final') {
-    $('#fight-eyebrow').textContent = 'MODO HISTÓRIA SECRETO · FASE 1';
-    $('#fight-title').textContent = 'A batalha pelo destino';
-    $('#battle-message').textContent = 'DIO Over Heaven e Pucci com Made in Heaven se aproximam.';
-  } else {
-    $('#fight-eyebrow').textContent = 'MODO HISTÓRIA ORIGINAL';
-    $('#fight-title').textContent = 'O caminho do destino';
-    $('#battle-message').textContent = `${selectedCharacter().name} enfrenta ${selectedCharacter().boss}.`;
-  }
+  if (mode === 'final') $('#battle-message').textContent = 'A jornada secreta aguarda a escolha do próximo trecho.';
+  else $('#battle-message').textContent = `${selectedCharacter().name} inicia sua campanha.`;
   updateInterface(true);
 }
 
@@ -280,7 +730,9 @@ function unlockAdvanced(character) {
 function unlockSupremesAndAwakenJotaro() {
   if (state.secretPhase === 2) return;
   state.secretPhase = 2;
+  state.secretRunPhase = 'final-battle';
   state.jotaroAwakened = true;
+  save.story.secretFinalPhase = 2;
   characters.forEach((character) => {
     if (!save.supreme.includes(character.id)) save.supreme.push(character.id);
   });
@@ -501,9 +953,30 @@ function damageEnemy(enemy, amount, kind, guardBreak = false) {
 
 function checkBattleEnd() {
   if (state.enemies.some((enemy) => enemy.hp > 0)) return;
-  if (state.mode === 'final' && state.secretPhase === 0) {
-    state.secretPhase = 1;
+  if (state.mode === 'final' && state.secretRunPhase === 'revenge-battle') {
+    const campaign = currentSecretCampaign();
+    const enemyId = state.enemies[0]?.id;
+    if (!campaign || !recordSecretBossVictory(save, campaign, enemyId, campaigns)) {
+      showToast('Esta revanche já foi concluída ou não corresponde à próxima Parte.');
+      return;
+    }
+    state.secretRunPhase = 'revenge-post';
+    state.fightActive = false;
     state.enemies = [];
+    attachPhysicsBodies();
+    persistSave();
+    $('#battle-message').textContent = `${campaign.secretBoss} foi derrotado novamente. O próximo trecho foi registrado.`;
+    updateStoryPanel();
+    updateInterface(true);
+    return;
+  }
+  if (state.mode === 'final' && state.secretRunPhase === 'final-battle' && state.secretPhase <= 1) {
+    state.secretPhase = 1;
+    state.secretRunPhase = 'final-transform';
+    save.story.secretFinalPhase = 1;
+    persistSave();
+    state.enemies = [];
+    attachPhysicsBodies();
     state.fightActive = false;
     $('#battle-message').textContent = 'Os dois inimigos caíram. A batalha ainda não terminou.';
     $('#fight-title').textContent = 'A transformação começa';
@@ -518,9 +991,31 @@ function checkBattleEnd() {
   }
   if (state.mode === 'final') {
     state.fightActive = false;
+    state.secretRunPhase = 'complete';
+    save.story.secretFinalComplete = true;
+    persistSave();
     $('#battle-message').textContent = 'DIO Over Heaven e Pucci foram derrotados. O destino foi reescrito.';
     $('#fight-title').textContent = 'A batalha pelo destino';
+    updateStoryPanel();
     showToast('VITÓRIA — O modo história secreto foi concluído.');
+  } else if (state.storyStage) {
+    const progress = currentCampaignProgress();
+    const stage = state.storyStage;
+    const enemyIds = state.enemies.map((enemy) => enemy.id);
+    if (!recordBattleVictory(progress, stage, enemyIds)) {
+      showToast('Esta vitória não corresponde ao objetivo registrado da fase.');
+      return;
+    }
+    state.fightActive = false;
+    state.enemies = [];
+    attachPhysicsBodies();
+    if (stage.allyAfterVictory) progress.flags[`ally:${stage.allyAfterVictory}`] = true;
+    if (stage.reward) progress.flags[`story-reward:${stage.reward}`] = true;
+    if (stage.chapterEnd) unlockAdvanced(selectedCharacter());
+    persistSave();
+    $('#battle-message').textContent = `${stage.enemies.map((enemy) => enemy.name).join(' e ')} derrotado. O cenário e o próximo objetivo mudaram.`;
+    updateStoryPanel();
+    showToast('Vitória registrada. A fase avançou para suas consequências.');
   } else {
     state.fightActive = false;
     unlockAdvanced(selectedCharacter());
@@ -533,24 +1028,30 @@ function checkBattleEnd() {
 function requestAssist() {
   if (state.mode !== 'final' || state.secretPhase !== 2 || !state.fightActive || state.assist || state.assistCooldown > 0) return;
   const current = selectedCharacter();
-  let helper = characters.find((character) => character.id !== current.id && character.name === assistCast[state.assistIndex || 0]);
+  const requestedHelper = assistCast[state.assistIndex || 0];
+  let helper = requestedHelper === kakyoinSupport.name ? kakyoinSupport : characters.find((character) => character.id !== current.id && character.name === requestedHelper);
   if (!helper) helper = characters.find((character) => character.id !== current.id);
   state.assistIndex = ((state.assistIndex || 0) + 1) % assistCast.length;
   if (helper.id === 'jotaro' && !state.jotaroAwakened) {
     showToast('A assistência de Jotaro ainda não está disponível.');
     return;
   }
-  state.assist = { character: helper, time: 2.7, maxTime: 2.7 };
+  const assistanceSkill = helper.id === 'kakyoinSupport'
+    ? helper.skills[state.assistIndex % helper.skills.length]
+    : helper.id === 'kakyoin'
+      ? helper.skills[0]
+      : helper.skills[helper.skills.length - 1];
+  state.assist = { character: helper, skill: assistanceSkill, time: 2.7, maxTime: 2.7 };
   state.assistCooldown = 62.7;
   const hasSupreme = save.supreme.includes(helper.id);
-  const damage = helper.id === 'jotaro' && state.jotaroAwakened ? 174 : hasSupreme ? 144 : 88;
+  const damage = helper.id === 'jotaro' && state.jotaroAwakened ? 174 : helper.id === 'kakyoin' ? assistanceSkill.damage : hasSupreme ? 144 : 88;
   const target = state.enemies.filter((enemy) => enemy.hp > 0).sort((first, second) => first.hp - second.hp)[0];
   if (target) {
     damageEnemy(target, damage, helper.id === 'jotaro' ? 'heaven-barrage' : 'assist-impact');
-    target.stun = Math.max(target.stun, helper.id === 'jotaro' ? 1.15 : 0.55);
+    target.stun = Math.max(target.stun, assistanceSkill.stun || (helper.id === 'jotaro' ? 1.15 : 0.55));
     checkBattleEnd();
   }
-  showToast(`${helper.id === 'jotaro' ? 'STAR PLATINUM: OVER HEAVEN' : helper.name.toUpperCase()} — ASSISTÊNCIA!`);
+  showToast(`${helper.id === 'jotaro' ? 'STAR PLATINUM: OVER HEAVEN' : helper.name.toUpperCase()} · ${assistanceSkill.name.toUpperCase()}!`);
   playTone(420, 0.11);
 }
 
@@ -584,7 +1085,8 @@ function update(dt, timestamp) {
   state.player.attackTimer = Math.max(0, state.player.attackTimer - dt);
   state.player.hitFlash = Math.max(0, state.player.hitFlash - dt);
 
-  if (state.fightActive && timestamp >= state.cinematicUntil) {
+  const exploring = state.mode === 'campaign' && currentCampaignProgress().phase === STORY_PHASES.OBJECTIVE_ACTIVE;
+  if ((state.fightActive || exploring) && timestamp >= state.cinematicUntil) {
     const player = state.player;
     if (player.physicsZone) {
       player.x = player.physicsZone.x;
@@ -605,7 +1107,7 @@ function update(dt, timestamp) {
       player.facingX = moveX;
       player.facingY = moveY;
     }
-    for (const enemy of state.enemies) updateEnemy(enemy, dt);
+    if (state.fightActive) for (const enemy of state.enemies) updateEnemy(enemy, dt);
   } else {
     state.player.body?.setVelocity(0, 0);
     state.enemies.forEach((enemy) => enemy.body?.setVelocity(0, 0));
@@ -634,28 +1136,47 @@ function updateEnemy(enemy, dt) {
   const dx = player.x - enemy.x;
   const dy = player.y - enemy.y;
   const distanceToPlayer = Math.hypot(dx, dy) || 1;
-  if (distanceToPlayer > 53) {
-    const speed = (enemy.empowered ? 63 : 49) * (enemy.slow > 0 ? 0.48 : 1);
+  const ranged = enemy.pattern === 'ranged' || enemy.pattern === 'hazard';
+  const shouldRetreat = ranged && distanceToPlayer < 135;
+  if (enemy.attackWindup > 0) {
+    enemy.attackWindup = Math.max(0, enemy.attackWindup - dt);
+    enemy.body?.setVelocity(0, 0);
+    if (enemy.attackWindup === 0 && enemy.attackTarget) {
+      const target = enemy.attackTarget;
+      enemy.attackTarget = null;
+      if (overlapsHitCircle(player, target.x, target.y, target.radius) && state.invulnerable <= 0) {
+        const damage = enemy.attackDamage || (enemy.empowered ? 24 : 8);
+        player.hp = Math.max(0, player.hp - damage);
+        player.hitFlash = 0.3;
+        state.invulnerable = 0.65;
+        state.screenShake = 4;
+        spawnBurst(player.x, player.y, '#ed855e', 'damage');
+        playTone(76, 0.08);
+        if (player.hp <= 0) playerDefeated();
+      }
+    }
+    return;
+  }
+  if (distanceToPlayer > 53 || shouldRetreat) {
+    const speed = (enemy.approachSpeed || (enemy.empowered ? 63 : 49)) * (enemy.slow > 0 ? 0.48 : 1);
+    const direction = shouldRetreat ? -1 : 1;
     if (enemy.body) {
-      enemy.body.setVelocity(dx / distanceToPlayer * speed, dy / distanceToPlayer * speed);
+      enemy.body.setVelocity(dx / distanceToPlayer * speed * direction, dy / distanceToPlayer * speed * direction);
     } else {
-      enemy.x += dx / distanceToPlayer * speed * dt;
-      enemy.y += dy / distanceToPlayer * speed * dt;
+      enemy.x += dx / distanceToPlayer * speed * direction * dt;
+      enemy.y += dy / distanceToPlayer * speed * direction * dt;
     }
   } else {
     enemy.body?.setVelocity(0, 0);
   }
   enemy.attackTimer -= dt;
-  if (enemy.attackTimer <= 0 && distanceToPlayer < (enemy.empowered ? 120 : 82) && state.invulnerable <= 0) {
-    const damage = enemy.empowered ? 24 : 8;
-    player.hp = Math.max(0, player.hp - damage);
-    player.hitFlash = 0.3;
-    state.invulnerable = 0.65;
-    state.screenShake = 4;
-    enemy.attackTimer = enemy.empowered ? 1.05 : 1.45;
-    spawnBurst(player.x, player.y, '#ed855e', 'damage');
-    playTone(76, 0.08);
-    if (player.hp <= 0) playerDefeated();
+  if (enemy.attackTimer <= 0 && distanceToPlayer < (enemy.attackRange || (enemy.empowered ? 150 : 82))) {
+    const windupByPattern = { rapid: 0.2, rusher: 0.26, heavy: 0.72, ranged: 0.58, hazard: 0.78, trickster: 0.48, vampire: 0.64, temporal: 0.76, spatial: 0.68 };
+    const duration = windupByPattern[enemy.pattern] || 0.42;
+    enemy.attackWindup = duration;
+    enemy.attackTarget = { x: player.x, y: player.y, radius: ranged ? 77 : enemy.pattern === 'spatial' ? 92 : 58 };
+    enemy.attackTimer = enemy.attackInterval || (enemy.empowered ? 1.05 : 1.45);
+    state.effects.push({ type: 'enemy-warning', x: player.x, y: player.y, radius: enemy.attackTarget.radius, time: duration, maxTime: duration });
   }
 }
 
@@ -680,24 +1201,26 @@ function spawnBurst(x, y, color, type) {
 }
 
 function drawBackground() {
+  const revengeMap = state.mode === 'final' && state.secretRunPhase?.startsWith('revenge');
+  const theme = state.mode === 'campaign' || revengeMap ? state.storyStage?.palette : null;
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, state.mode === 'final' ? '#282b34' : '#3c4a3d');
-  gradient.addColorStop(0.52, state.mode === 'final' ? '#36343a' : '#53604a');
-  gradient.addColorStop(1, state.mode === 'final' ? '#26333a' : '#324437');
+  gradient.addColorStop(0, theme?.wall || (state.mode === 'final' ? '#282b34' : '#3c4a3d'));
+  gradient.addColorStop(0.52, theme?.ground || (state.mode === 'final' ? '#36343a' : '#53604a'));
+  gradient.addColorStop(1, theme?.floor || (state.mode === 'final' ? '#26333a' : '#324437'));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = state.mode === 'final' ? '#22272c' : '#333f35';
+  ctx.fillStyle = theme?.wall || (state.mode === 'final' ? '#22272c' : '#333f35');
   ctx.fillRect(0, 32, canvas.width, 104);
   for (let building = 0; building < 13; building += 1) {
     const x = building * 78 - 12;
     const height = 38 + ((building * 37) % 55);
-    ctx.fillStyle = building % 2 ? '#626457' : '#515c50';
+    ctx.fillStyle = building % 2 ? (theme?.ground || '#626457') : (theme?.wall || '#515c50');
     ctx.fillRect(x, 135 - height, 65, height);
     ctx.fillStyle = '#333c37';
     ctx.fillRect(x + 3, 135 - height, 58, 4);
     for (let window = 0; window < 4; window += 1) {
-      ctx.fillStyle = state.mode === 'final' ? '#c5a95744' : '#ddcf9250';
+      ctx.fillStyle = state.mode === 'final' ? '#c5a95744' : `${theme?.accent || '#ddcf92'}80`;
       ctx.fillRect(x + 9 + (window % 2) * 27, 145 - height + Math.floor(window / 2) * 19, 8, 10);
     }
   }
@@ -711,8 +1234,8 @@ function drawBackground() {
   ctx.fillRect(0, 357, canvas.width, 5);
 
   const groundGradient = ctx.createLinearGradient(0, 150, 0, canvas.height);
-  groundGradient.addColorStop(0, state.mode === 'final' ? '#3a403a' : '#60604d');
-  groundGradient.addColorStop(1, state.mode === 'final' ? '#2b3736' : '#3d5043');
+  groundGradient.addColorStop(0, theme?.ground || (state.mode === 'final' ? '#3a403a' : '#60604d'));
+  groundGradient.addColorStop(1, theme?.floor || (state.mode === 'final' ? '#2b3736' : '#3d5043'));
   ctx.fillStyle = groundGradient;
   ctx.fillRect(0, 153, canvas.width, canvas.height - 153);
   for (let y = 174; y < 540; y += 38) {
@@ -731,7 +1254,99 @@ function drawBackground() {
   drawPlanter(120, 202);
   drawPlanter(838, 191);
   drawPlanter(872, 404);
+  drawStoryLandmarks(theme);
   drawDepthRails();
+}
+
+function drawStoryLandmarks(theme) {
+  const revengeMap = state.mode === 'final' && state.secretRunPhase?.startsWith('revenge');
+  if (state.mode !== 'campaign' && !revengeMap) return;
+  const stage = state.storyStage;
+  const progress = revengeMap ? null : currentCampaignProgress();
+  if (!stage) {
+    const complete = progress.phase === STORY_PHASES.CAMPAIGN_COMPLETE;
+    ctx.fillStyle = complete ? '#d3e85a' : '#707c62';
+    ctx.fillRect(855, 278, 48, 6);
+    ctx.fillRect(855, 284, 6, complete ? 36 : 62);
+    ctx.fillRect(897, 284, 6, complete ? 36 : 62);
+    ctx.fillStyle = '#20251f';
+    ctx.fillRect(867, 286, 24, 43);
+    if (complete) {
+      ctx.fillStyle = '#d3e85a';
+      ctx.fillRect(878, 302, 3, 4);
+    }
+    return;
+  }
+
+  ctx.fillStyle = theme?.accent || '#a79b68';
+  ctx.globalAlpha = 0.8;
+  if (stage.id.includes('train') || stage.id.includes('hamon')) {
+    ctx.fillRect(456, 268, 8, 55);
+    ctx.fillRect(426, 281, 68, 5);
+    ctx.fillRect(429, 304, 63, 5);
+  } else if (stage.id.includes('race') || stage.id.includes('rotation')) {
+    for (let post = 0; post < 5; post += 1) ctx.fillRect(427 + post * 27, 260, 4, 59);
+    ctx.fillRect(427, 271, 112, 4);
+  } else if (stage.id.includes('prison') || stage.id.includes('gwess') || stage.id.includes('johngalli')) {
+    for (let bar = 0; bar < 7; bar += 1) ctx.fillRect(434 + bar * 13, 255, 3, 68);
+  } else if (stage.id.includes('train') || stage.id.includes('trem')) {
+    ctx.fillRect(432, 251, 119, 11);
+    ctx.fillRect(432, 317, 119, 11);
+    for (let window = 0; window < 4; window += 1) ctx.fillRect(443 + window * 27, 276, 17, 20);
+  } else if (stage.id.includes('estate') || stage.id.includes('property') || stage.id.includes('diamond')) {
+    ctx.fillRect(429, 307, 58, 12);
+    ctx.fillRect(433, 278, 50, 12);
+    ctx.fillStyle = '#d4bf85';
+    ctx.fillRect(450, 269, 18, 38);
+  } else if (stage.id.includes('dune') || stage.id.includes('desert') || stage.id.includes('hualalai')) {
+    ctx.fillRect(414, 303, 58, 12);
+    ctx.fillRect(476, 290, 64, 15);
+  } else {
+    ctx.fillRect(420, 302, 45, 13);
+    ctx.fillRect(466, 290, 48, 13);
+    ctx.fillRect(515, 277, 42, 13);
+  }
+  ctx.globalAlpha = 1;
+
+  if (progress?.phase === STORY_PHASES.OBJECTIVE_ACTIVE) {
+    const marker = stage.objective;
+    const bob = Math.sin(state.elapsed * 4) * 4;
+    ctx.globalAlpha = 0.2 + Math.sin(state.elapsed * 5) * 0.05;
+    ctx.fillStyle = theme?.accent || '#d3e85a';
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = theme?.accent || '#d3e85a';
+    ctx.beginPath();
+    ctx.moveTo(marker.x, marker.y - 12 + bob);
+    ctx.lineTo(marker.x + 9, marker.y + bob);
+    ctx.lineTo(marker.x, marker.y + 12 + bob);
+    ctx.lineTo(marker.x - 9, marker.y + bob);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#171a19';
+    ctx.fillRect(marker.x - 2, marker.y + bob - 2, 4, 4);
+    ctx.font = '9px "DM Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f0eee0';
+    ctx.fillText('PISTA · F', marker.x, marker.y - 24 + bob);
+    if (distance(state.player, marker) <= 86) {
+      ctx.fillStyle = theme?.accent || '#d3e85a';
+      ctx.fillText('PRESSIONE F', state.player.x, state.player.y - 48);
+    }
+  }
+
+  if (progress && (progress.unlockedPathIds.includes(stage.pathId) || progress.phase === STORY_PHASES.ENVIRONMENT_CHANGED || progress.phase === STORY_PHASES.NEXT_STAGE_UNLOCKED || progress.phase === STORY_PHASES.STAGE_COMPLETE)) {
+    const open = progress.phase !== STORY_PHASES.POST_BATTLE;
+    ctx.fillStyle = theme?.accent || '#d3e85a';
+    ctx.globalAlpha = 0.6 + Math.sin(state.elapsed * 3) * 0.14;
+    ctx.fillRect(858, 250, 48, 5);
+    ctx.fillRect(858, 255, 5, 58);
+    ctx.fillRect(901, 255, 5, 58);
+    if (open) ctx.fillRect(872, 270, 3, 43);
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawPlanter(x, y) {
@@ -963,11 +1578,22 @@ function updateInterface(force = false) {
     $('#part-label').innerHTML = `PARTE ${character.part} <span>/</span> ${character.era}`;
     $('#fighter-name').textContent = character.name.toUpperCase();
     $('#form-name').textContent = isOverHeaven() ? 'STAR PLATINUM: OVER HEAVEN' : character.stand;
-    $('#boss-label').textContent = state.mode === 'final' ? 'DIO OVER HEAVEN · PUCCI' : character.boss;
-    $('#fight-eyebrow').textContent = state.mode === 'final' ? `MODO HISTÓRIA SECRETO · FASE ${Math.max(1, state.secretPhase)}` : 'MODO HISTÓRIA ORIGINAL';
-    if (state.mode === 'campaign') $('#fight-title').textContent = 'O caminho do destino';
+    const campaign = selectedCampaign();
+    const progress = currentCampaignProgress();
+    const stage = state.storyStage;
+    $('#boss-label').textContent = state.mode === 'final'
+      ? state.secretRunPhase?.startsWith('revenge') ? currentSecretCampaign()?.secretBoss || 'CHEFE DA REVANCHE' : 'DIO OVER HEAVEN · PUCCI'
+      : stage?.enemies.map((enemy) => enemy.name).join(' · ') || (progress.phase === STORY_PHASES.CAMPAIGN_COMPLETE ? 'JORNADA CONCLUÍDA' : 'AGUARDANDO PRÓXIMA FASE');
+    $('#fight-eyebrow').textContent = state.mode === 'final'
+      ? state.secretRunPhase?.startsWith('revenge') ? `REVANCHE · PARTE ${campaigns.findIndex((entry) => entry.id === state.secretCampaignId) + 1} / ${campaigns.length}` : `MODO HISTÓRIA SECRETO · ${state.secretRunPhase === 'complete' ? 'CONCLUÍDO' : `FASE ${Math.max(1, state.secretPhase)}`}`
+      : `CAMPANHA · PARTE ${campaign.part} · ${progress.phase.replaceAll('_', ' ')}`;
+    if (state.mode === 'campaign') $('#fight-title').textContent = stage?.title || (campaign.openEnded ? 'A campanha continua' : `${campaign.protagonist} · campanha concluída`);
+    else if (state.secretRunPhase?.startsWith('revenge')) $('#fight-title').textContent = state.storyStage?.title || 'Revanche';
+    else if (state.secretRunPhase === 'final-intro') $('#fight-title').textContent = 'As nove Partes se reencontram';
+    else if (state.secretRunPhase === 'complete') $('#fight-title').textContent = 'A ameaça terminou';
     document.querySelectorAll('.roster-entry').forEach((button, index) => button.classList.toggle('selected', index === state.selected));
     document.querySelectorAll('.mode-button').forEach((button) => button.classList.toggle('active', button.dataset.mode === state.mode));
+    updateStoryPanel();
   }
   const healthPercent = Math.max(0, state.player.hp / state.player.maxHp * 100);
   $('#health-fill').style.width = `${healthPercent}%`;
@@ -988,15 +1614,24 @@ function updateInterface(force = false) {
   const assistEnabled = state.mode === 'final' && state.secretPhase === 2 && state.fightActive && !state.assist && state.assistCooldown <= 0;
   assistButton.disabled = !assistEnabled;
   $('#assist-timer').textContent = state.assist ? 'ALIADO NA ARENA' : state.assistCooldown > 0 ? `${Math.ceil(state.assistCooldown)} S` : state.mode === 'final' && state.secretPhase === 2 ? 'PRONTA' : 'FASE 2';
+  document.querySelectorAll('.mode-button').forEach((button) => {
+    if (button.dataset.mode === 'final') button.disabled = !save.story.secretUnlocked;
+  });
+  document.querySelectorAll('.roster-entry').forEach((button, index) => {
+    const unlocked = hasCampaignAccess(characters[index].id);
+    button.disabled = !unlocked;
+    button.classList.toggle('locked', !unlocked);
+  });
 }
 
 function handleKeyDown(event) {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
   const key = event.key.toLowerCase();
-  if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', ' ', 'j', '1', '2', '3', '4'].includes(key)) event.preventDefault();
+  if (['w', 'a', 's', 'd', 'f', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', ' ', 'j', '1', '2', '3', '4'].includes(key)) event.preventDefault();
   state.keys.add(key);
   if (!event.repeat && (key === 'j' || key === ' ')) performBasicAttack();
   if (!event.repeat && /^[1-4]$/.test(key)) useSkill(Number(key) - 1);
+  if (!event.repeat && key === 'f') interactWithStoryObjective();
   if (!event.repeat && key === 'e') requestAssist();
 }
 function handleKeyUp(event) { state.keys.delete(event.key.toLowerCase()); }
@@ -1005,6 +1640,7 @@ $('#power-row').addEventListener('click', (event) => {
   const button = event.target.closest('[data-slot]');
   if (button && !button.disabled) useSkill(Number(button.dataset.slot));
 });
+$('#story-action').addEventListener('click', continueStory);
 document.querySelectorAll('.mode-button').forEach((button) => button.addEventListener('click', () => switchMode(button.dataset.mode)));
 $('#assist-button').addEventListener('click', requestAssist);
 $('#sound-button').addEventListener('click', () => {
@@ -1018,8 +1654,10 @@ $('#reset-button').addEventListener('click', () => {
   save.advanced = [];
   save.supreme = [];
   save.victories = [];
+  save.story = normalizeSave(null, campaigns).story;
+  state.selected = 0;
   persistSave();
-  resetBattle(state.mode);
+  resetBattle('campaign');
   showToast('Progresso reiniciado.');
 });
 

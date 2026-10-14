@@ -30,7 +30,7 @@ const stage = (id, title, location, colors, enemyName, enemyHp, pattern, objecti
 
 export const campaigns = [
   {
-    id: 'jonathan', part: 1, title: 'Phantom Blood', protagonist: 'Jonathan Joestar',
+    id: 'jonathan', part: 1, title: 'Phantom Blood', protagonist: 'Jonathan Joestar', secretBoss: 'Dio Brando',
     stages: [
       stage('p1-estate', 'A rivalidade na propriedade Joestar', 'Propriedade Joestar', palette('#39473b', '#687354', '#4b5d4b', '#d6c580'), 'Dio Brando', 330, 'duelist', 'Investigue a mesa de estudos de Jonathan.', ['Uma rivalidade toma conta da propriedade enquanto a familia tenta manter a paz.', 'Dio transforma a disputa pessoal em uma luta pela casa.', 'A propriedade muda de dono, mas a suspeita sobre Dio permanece.'], 'O caminho para o patio se abre. Uma pista da mascara fica para tras.', { reward: 'rivalry-seen' }),
       stage('p1-stone-mask', 'O misterio da Mascara de Pedra', 'Arquivo da propriedade', palette('#343b3b', '#615f50', '#454c42', '#c29368'), 'Dio Brando', 380, 'trickster', 'Examine as notas e a mascara de pedra.', ['A investigacao liga a mascara aos acontecimentos recentes.', 'Dio usa o poder vampirico revelado para impedir que Jonathan alcance o arquivo.', 'A mascara e o caminho de Dio deixam de ser um misterio.'], 'As prateleiras tombam e revelam uma saida antes oculta.'),
@@ -41,7 +41,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'joseph', part: 2, title: 'Battle Tendency', protagonist: 'Joseph Joestar',
+    id: 'joseph', part: 2, title: 'Battle Tendency', protagonist: 'Joseph Joestar', secretBoss: 'Kars',
     stages: [
       stage('p2-investigation', 'A investigacao dos Homens do Pilar', 'Nova York, 1938', palette('#4a4440', '#776b52', '#605842', '#e4bc65'), 'Patrulha da mascara', 340, 'rapid', 'Examine as marcas na coluna de pedra.', ['Joseph encontra sinais de uma ameaca muito mais antiga.', 'Um guardiao tenta impedir a investigacao.', 'O registro recuperado aponta para a instalacao seguinte.'], 'A passagem para a instalacao fica acessivel.'),
       stage('p2-santana', 'Santana desperta', 'Instalacao subterranea', palette('#373b38', '#665d4d', '#4e4c42', '#c5a875'), 'Santana', 520, 'trickster', 'Ative o painel de contencao.', ['Uma instalacao estreita foi construida para conter algo que voltou a se mover.', 'Santana usa os corredores para encurtar a distancia e surpreender Joseph.', 'A contencao muda de estado e os pesquisadores conseguem evacuar.'], 'As luzes de emergencia se acendem e uma porta de manutencao destranca.', { attackRange: 76, reward: 'ripple-trap' }),
@@ -51,7 +51,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'jotaro', part: 3, title: 'Stardust Crusaders', protagonist: 'Jotaro Kujo',
+    id: 'jotaro', part: 3, title: 'Stardust Crusaders', protagonist: 'Jotaro Kujo', secretBoss: 'DIO',
     stages: [
       stage('p3-stand-awakening', 'O despertar de Star Platinum', 'Toquio, 1988', palette('#464456', '#737052', '#545749', '#d78a83'), 'Agente de DIO', 350, 'duelist', 'Observe o Stand que aparece ao lado de Jotaro.', ['Um Stand se manifesta sem que Jotaro saiba como controla-lo.', 'O agente de DIO ataca enquanto o novo poder ainda e instavel.', 'A origem da ameaca aponta para um antigo aliado da familia.'], 'O portao da escola se abre e a jornada comeca.'),
       stage('p3-alliance', 'Aliados sob suspeita', 'Clinica em Toquio', palette('#445153', '#6d7164', '#505d55', '#8cc1ca'), 'Noriaki Kakyoin', 395, 'ranged', 'Encontre a origem do sinal de Stand.', ['Kakyoin esta sob a influencia de uma forca que nao controla.', 'Seus ataques a distancia obrigam Jotaro a atravessar a sala.', 'Livre da influencia, Kakyoin passa a acompanhar o grupo.'], 'Os equipamentos medicos revelam a localizacao de Avdol.', { allyAfterVictory: 'kakyoin' }),
@@ -62,7 +62,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'josuke4', part: 4, title: 'Diamond Is Unbreakable', protagonist: 'Josuke Higashikata',
+    id: 'josuke4', part: 4, title: 'Diamond Is Unbreakable', protagonist: 'Josuke Higashikata', secretBoss: 'Yoshikage Kira',
     stages: [
       stage('p4-morioh', 'Uma manha em Morioh', 'Morioh, 1999', palette('#49544b', '#74785a', '#5a674d', '#d58d80'), 'Yukako Yamagishi', 355, 'rapid', 'Investigue a sala alterada na escola.', ['A cidade parece tranquila, mas os Stands deixam marcas por toda parte.', 'Yukako transforma o corredor em uma armadilha de fios.', 'Os estudantes apontam uma nova ocorrencia na cidade.'], 'O corredor bloqueado e liberado.', { reward: 'crazy-diamond-rush' }),
       stage('p4-angelo', 'A pista de Angelo', 'Rua perto do rio', palette('#435050', '#6c735f', '#536257', '#7fb5ad'), 'Angelo', 480, 'trickster', 'Examine o hidrante danificado.', ['Uma trilha de objetos restaurados leva ate o rio.', 'Angelo usa a agua e as esquinas para atacar fora de vista.', 'A evidencia encontrada indica que a cidade esconde outros usuarios de Stand.'], 'Crazy Diamond restaura a ponte e revela a margem oposta.'),
@@ -72,7 +72,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'giorno', part: 5, title: 'Golden Wind', protagonist: 'Giorno Giovanna',
+    id: 'giorno', part: 5, title: 'Golden Wind', protagonist: 'Giorno Giovanna', secretBoss: 'Diavolo',
     stages: [
       stage('p5-bucciarati', 'O encontro com Bucciarati', 'Napoles, Italia', palette('#655248', '#92714e', '#745941', '#d7c276'), 'Bruno Bucciarati', 370, 'duelist', 'Encontre Bucciarati perto da estacao.', ['Giorno explica seu objetivo a alguem que conhece as ruas de Napoles.', 'Bruno avalia Gold Experience em um confronto controlado.', 'Bruno aceita levar Giorno ate a equipe.'], 'O acesso ao esconderijo da equipe e revelado.', { allyAfterVictory: 'bruno-bucciarati' }),
       stage('p5-polpo', 'A provacao de Polpo', 'Prisao de seguranca', palette('#3e4b47', '#666f60', '#4b5d53', '#d49967'), 'Polpo', 465, 'trickster', 'Complete a tarefa da chama sem apaga-la.', ['Uma tarefa simples esconde uma regra dificil de perceber.', 'Polpo pressiona com ataques que punem a aproximacao descuidada.', 'A equipe recebe uma missao e confia em Giorno.'], 'O elevador da prisao se abre para a proxima missao.'),
@@ -83,7 +83,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'jolyne', part: 6, title: 'Stone Ocean', protagonist: 'Jolyne Cujoh',
+    id: 'jolyne', part: 6, title: 'Stone Ocean', protagonist: 'Jolyne Cujoh', secretBoss: 'Enrico Pucci',
     stages: [
       stage('p6-gwess', 'Regras da cela', 'Green Dolphin Street', palette('#485154', '#677269', '#505e59', '#b889ae'), 'Gwess', 390, 'trickster', 'Investigue a cela ao lado.', ['A prisao esconde regras que mudam quando ninguem esta olhando.', 'Gwess reduz o espaco de luta e tenta manter Jolyne presa.', 'A cela e liberada e Jolyne encontra um contato confiavel.'], 'A porta da cela permanece aberta.'),
       stage('p6-johngalli', 'O tiro que nao devia existir', 'Enfermaria da prisao', palette('#445257', '#69766c', '#4e625c', '#b3ca8a'), 'Johngalli A', 485, 'ranged', 'Encontre a origem do disparo na enfermaria.', ['A trajetoria do tiro parece impossivel de rastrear.', 'Johngalli A pressiona de longe enquanto Stone Free costura uma rota de aproximacao.', 'A equipe reconhece o plano de fuga de Pucci.'], 'Uma passagem de servico liga a enfermaria ao patio.'),
@@ -93,7 +93,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'johnny', part: 7, title: 'Steel Ball Run', protagonist: 'Johnny Joestar',
+    id: 'johnny', part: 7, title: 'Steel Ball Run', protagonist: 'Johnny Joestar', secretBoss: 'Funny Valentine',
     stages: [
       stage('p7-start-race', 'A largada da Steel Ball Run', 'Oeste americano', palette('#765c43', '#a27e4d', '#826546', '#e4bd72'), 'Diego Brando', 420, 'rusher', 'Alcance o marco da primeira etapa.', ['Johnny e Gyro entram em uma corrida que muda o terreno a cada trecho.', 'Diego disputa a frente e obriga Johnny a equilibrar movimento e precisao.', 'O mapa da corrida marca o proximo ponto de controle.'], 'A cerca da corrida cai para a proxima etapa.', { reward: 'tusk-act-1' }),
       stage('p7-blackmore', 'Chuva no vale', 'Vale sob chuva', palette('#49504d', '#717562', '#545e57', '#94b7af'), 'Blackmore', 520, 'ranged', 'Rastreie as pegadas interrompidas.', ['A chuva esconde uma trilha que so aparece por instantes.', 'Blackmore controla as rotas e pune quem para no meio do vale.', 'Os sinais indicam onde Gyro encontrou os restos sagrados.'], 'O nevoeiro abre uma trilha entre as rochas.'),
@@ -103,7 +103,7 @@ export const campaigns = [
     ],
   },
   {
-    id: 'gappy', part: 8, title: 'JoJolion', protagonist: 'Josuke Higashikata (Gappy)',
+    id: 'gappy', part: 8, title: 'JoJolion', protagonist: 'Josuke Higashikata (Gappy)', secretBoss: 'Tooru',
     stages: [
       stage('p8-identity', 'Uma identidade em aberto', 'Morioh, 2011', palette('#46524f', '#75806a', '#596a59', '#d5a978'), 'Yotsuyu Yagiyama', 470, 'trickster', 'Investigue a parede de rocha perto da cidade.', ['Josuke encontra rastros de uma vida que nao consegue recordar.', 'Yotsuyu transforma o terreno em um risco que se aproxima lentamente.', 'A primeira pista aponta para a familia Higashikata.'], 'Uma fenda na rocha expõe um novo caminho.'),
       stage('p8-aisho', 'A busca pelos Rokakaka', 'Distrito comercial', palette('#545249', '#837752', '#6a624a', '#c89c78'), 'Aisho Dainenjiyama', 485, 'ranged', 'Siga os recibos ate o galpao.', ['Recibos e relatos aproximam a equipe de um fruto raro.', 'Aisho protege o galpao com ataques de longa distancia.', 'Os registros identificam outro participante da busca.'], 'A grade do galpao se abre sem destruir as provas.'),
@@ -113,10 +113,11 @@ export const campaigns = [
     ],
   },
   {
-    id: 'jodio', part: 9, title: 'The JOJOLands', protagonist: 'Jodio Joestar', openEnded: true,
+    id: 'jodio', part: 9, title: 'The JOJOLands', protagonist: 'Jodio Joestar', secretBoss: 'Oponente do capítulo atual', openEnded: true,
     stages: [
       stage('p9-hawaii', 'O cotidiano no Havai', 'Havai, 2023', palette('#40534c', '#78835a', '#556a51', '#8bc7b2'), 'Ameaça da missão', 390, 'rusher', 'Fale com Dragona no ponto de encontro.', ['Jodio e Dragona planejam como conseguir dinheiro sem chamar atencao.', 'Um imprevisto interrompe o acordo e testa o controle de November Rain.', 'A missao continua, mas a equipe precisa rever o plano.'], 'A chuva limpa as marcas e revela a saida da rua.', { reward: 'november-rain' }),
       stage('p9-team', 'Um trabalho para a equipe', 'Estrada na ilha', palette('#43574c', '#7b8858', '#596c4f', '#d7ba76'), 'Seguranca do carregamento', 465, 'rapid', 'Encontre Paco e Usagi no acostamento.', ['Paco e Usagi acompanham Jodio em um trabalho que depende de coordenacao.', 'A seguranca muda o trajeto quando a equipe se aproxima.', 'O carregamento chega ao destino, com novas duvidas sobre seu valor.'], 'A equipe muda o ponto de encontro.', { allyAfterVictory: 'paco-usagi' }),
+      stage('p9-diamond', 'O diamante na propriedade', 'Propriedade na ilha', palette('#49604b', '#788754', '#596c50', '#e1c37b'), 'Vigilancia da propriedade', 510, 'spatial', 'Localize a passagem para a propriedade.', ['A equipe investiga uma propriedade sem conhecer todas as ameacas.', 'Rotas de vigilancia e ataques ambientais mudam conforme a aproximacao.', 'O resultado altera o proximo trecho da missao, sem definir o destino final da Parte 9.'], 'O caminho de entrada fica registrado para futuras missoes.'),
       stage('p9-open-chapter', 'Hualalai: continua aberta', 'Hualalai, Havai', palette('#59604a', '#878052', '#686346', '#dbb879'), 'Oponente do capitulo atual', 560, 'trickster', 'Investigue o terreno e acompanhe a equipe.', ['Jodio, Dragona, Paco e Usagi seguem uma pista do capitulo atual.', 'A equipe encontra um obstaculo local; novas etapas podem ser adicionadas sem inventar um final oficial.', 'Este trecho representa o limite atual desta campanha no jogo. A historia de The JOJOLands continua aberta.'], 'Uma trilha fica anotada para o proximo capitulo publicado.', { openEndedChapter: true }),
     ],
   },

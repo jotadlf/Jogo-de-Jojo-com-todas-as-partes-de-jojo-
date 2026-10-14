@@ -30,6 +30,11 @@ export const SAVE_DEFAULT = Object.freeze({
   story: {
     unlockedCampaignIds: ['jonathan'],
     secretUnlocked: false,
+    secretStageIndex: 0,
+    secretDefeatedCampaignIds: [],
+    secretFinalAvailable: false,
+    secretFinalPhase: 0,
+    secretFinalComplete: false,
     campaigns: {},
   },
 });
@@ -89,6 +94,11 @@ export function normalizeSave(raw, campaigns) {
     story: {
       unlockedCampaignIds: unlocked,
       secretUnlocked: previousStory.secretUnlocked === true,
+      secretStageIndex: Math.max(0, Math.min(Number.isInteger(previousStory.secretStageIndex) ? previousStory.secretStageIndex : 0, campaigns.length)),
+      secretDefeatedCampaignIds: uniqueStrings(previousStory.secretDefeatedCampaignIds).filter((id) => campaigns.some((campaign) => campaign.id === id)),
+      secretFinalAvailable: previousStory.secretFinalAvailable === true || (Number.isInteger(previousStory.secretStageIndex) && previousStory.secretStageIndex >= campaigns.length),
+      secretFinalPhase: Math.max(0, Math.min(Number.isInteger(previousStory.secretFinalPhase) ? previousStory.secretFinalPhase : 0, 2)),
+      secretFinalComplete: previousStory.secretFinalComplete === true,
       campaigns: progressByCampaign,
     },
   };
@@ -161,5 +171,31 @@ export function unlockCampaignAfterCompletion(save, campaign, campaigns) {
   if (nextCampaign && !save.story.unlockedCampaignIds.includes(nextCampaign.id)) save.story.unlockedCampaignIds.push(nextCampaign.id);
   const allComplete = campaigns.every((entry) => save.story.campaigns[entry.id].phase === STORY_PHASES.CAMPAIGN_COMPLETE);
   if (allComplete) save.story.secretUnlocked = true;
+  return true;
+}
+
+export function createSecretEncounter(campaign, boss) {
+  const multiplier = 1.5;
+  return {
+    ...boss,
+    id: `secret-boss-${campaign.id}`,
+    hp: Math.round(boss.hp * multiplier),
+    maxHp: Math.round(boss.hp * multiplier),
+    attackDamage: Math.round((boss.attackDamage || 8) * multiplier),
+    attackRange: boss.attackRange || 94,
+    attackInterval: boss.attackInterval || 1.22,
+    empowered: true,
+    pattern: boss.pattern || 'heavy',
+  };
+}
+
+export function recordSecretBossVictory(save, campaign, enemyId, campaigns) {
+  if (!save.story.secretUnlocked || save.story.secretStageIndex >= campaigns.length) return false;
+  const expectedCampaign = campaigns[save.story.secretStageIndex];
+  if (!expectedCampaign || campaign.id !== expectedCampaign.id || enemyId !== `secret-boss-${campaign.id}`) return false;
+  if (save.story.secretDefeatedCampaignIds.includes(campaign.id)) return false;
+  save.story.secretDefeatedCampaignIds.push(campaign.id);
+  save.story.secretStageIndex += 1;
+  if (save.story.secretStageIndex >= campaigns.length) save.story.secretFinalAvailable = true;
   return true;
 }

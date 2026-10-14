@@ -54,6 +54,19 @@ h1 { margin: 5px 0 0; font: 700 27px/.95 'Barlow Condensed', sans-serif; }
 #game canvas { display: block; width: 100% !important; height: 100% !important; image-rendering: pixelated; }
 .canvas-hint { position: absolute; bottom: 10px; left: 12px; z-index: 1; color: #e5e8d8b0; font-size: 8px; pointer-events: none; }
 .canvas-hint span { padding: 0 4px; color: var(--lime); }
+.story-panel { position: absolute; right: 14px; bottom: 34px; z-index: 4; display: grid; gap: 9px; width: min(350px, calc(100% - 28px)); padding: 15px 17px; border-left: 3px solid var(--lime); background: #181e1bed; box-shadow: 0 8px 26px #0008; }
+.story-panel[hidden] { display: none; }
+.story-kicker, .story-location { font-size: 8px; color: var(--lime); }
+.story-location { color: #aeb8ad; }
+.story-panel h2 { margin: 0; color: var(--paper); font: 700 23px/.95 'Barlow Condensed', sans-serif; }
+.story-text { margin: 0; color: #d5d8cb; font-size: 9px; line-height: 1.7; }
+.story-objective { padding-top: 8px; border-top: 1px solid var(--line); color: #b7c58c; font-size: 8px; line-height: 1.6; }
+.story-action { justify-self: start; padding: 9px 13px; border: 0; color: var(--ink); background: var(--lime); font-size: 9px; font-weight: 500; cursor: pointer; }
+.story-action:hover { background: #e7f68c; }
+.story-action:disabled { color: #8b9084; background: #40453e; cursor: default; }
+.roster-entry.locked { opacity: .42; cursor: not-allowed; }
+.roster-entry.locked:hover { background: transparent; }
+.mode-button:disabled { color: #687068; cursor: not-allowed; }
 .cinematic { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; text-align: center; background: #101312ee; opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; }
 .cinematic.active { opacity: 1; visibility: visible; animation: heaven-flash 4.7s ease-in-out both; }
 .cinematic-lines { position: absolute; inset: -45%; background: repeating-conic-gradient(from 0deg, #d3e85a08 0deg 4deg, transparent 4deg 14deg); animation: heaven-spin 7s linear infinite; }

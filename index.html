@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#171a19">
+    <meta property="og:image" content="capa.png">
     <title>JoJo's Bizarre Adventure: Eternal Destiny</title>
     <link rel="stylesheet" href="style.css">
   </head>
@@ -33,6 +34,14 @@
 
           <div class="canvas-frame">
             <div id="game" role="application" aria-label="Arena de combate top-down. Use W A S D para mover e J para atacar." tabindex="0"></div>
+            <aside class="story-panel" id="story-panel" aria-live="polite" aria-label="Progressão da campanha" hidden>
+              <span class="story-kicker" id="story-kicker">CAMPANHA</span>
+              <span class="story-location" id="story-location"></span>
+              <h2 id="story-title"></h2>
+              <p class="story-text" id="story-text"></p>
+              <div class="story-objective" id="story-objective"></div>
+              <button class="story-action" id="story-action" type="button">CONTINUAR</button>
+            </aside>
             <div class="cinematic" id="cinematic" aria-live="assertive" aria-hidden="true">
               <div class="cinematic-lines"></div>
               <span class="cinematic-kicker">O TEMPO SE CURVA. A REALIDADE CEDE.</span>
@@ -42,7 +51,7 @@
               <div class="cinematic-rule"></div>
             </div>
             <div class="arena-toast" id="arena-toast" aria-live="polite"></div>
-            <div class="canvas-hint" id="canvas-hint">W A S D MOVER <span>·</span> J GOLPEAR <span>·</span> 1–4 PODERES <span>·</span> E ASSISTIR</div>
+            <div class="canvas-hint" id="canvas-hint">W A S D MOVER <span>·</span> J GOLPEAR <span>·</span> 1–4 PODERES <span>·</span> F INTERAGIR <span>·</span> E ASSISTIR</div>
           </div>
 
           <div class="fighter-hud">

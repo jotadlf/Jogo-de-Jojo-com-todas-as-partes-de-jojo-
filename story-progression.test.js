@@ -7,6 +7,8 @@ import {
   completeStage,
   finishStage,
   normalizeSave,
+  createSecretEncounter,
+  recordSecretBossVictory,
   recordBattleVictory,
   recordDialogue,
   recordEnvironmentChange,
@@ -103,4 +105,23 @@ test('campanhas abrem a seguinte em ordem e só liberam a história secreta ao c
   assert.equal(save.story.secretUnlocked, true);
   assert.equal(campaigns.at(-1).openEnded, true);
   assert.equal(campaigns.at(-1).stages.at(-1).openEndedChapter, true);
+});
+
+test('modo secreto fortalece cada chefe em 50% e exige vencer as nove partes na ordem', () => {
+  const save = normalizeSave(SAVE_DEFAULT, campaigns);
+  for (const campaign of campaigns) completeCampaign(save, campaign);
+  const baseBoss = { id: 'kars', name: 'KARS', hp: 420, attackDamage: 10, pattern: 'duelist' };
+  const secretBoss = createSecretEncounter(campaigns[1], baseBoss);
+  assert.equal(secretBoss.hp, 630);
+  assert.equal(secretBoss.attackDamage, 15);
+  assert.equal(secretBoss.pattern, 'duelist');
+
+  assert.equal(recordSecretBossVictory(save, campaigns[1], 'secret-boss-joseph', campaigns), false);
+  assert.equal(recordSecretBossVictory(save, campaigns[0], 'secret-boss-jonathan', campaigns), true);
+  assert.equal(recordSecretBossVictory(save, campaigns[0], 'secret-boss-jonathan', campaigns), false);
+  assert.equal(save.story.secretStageIndex, 1);
+  for (const campaign of campaigns.slice(1)) assert.equal(recordSecretBossVictory(save, campaign, `secret-boss-${campaign.id}`, campaigns), true);
+  assert.equal(save.story.secretStageIndex, campaigns.length);
+  assert.equal(save.story.secretFinalAvailable, true);
+  assert.equal(save.story.secretFinalPhase, 0);
 });
