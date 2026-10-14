@@ -164,7 +164,7 @@ const state = {
   secretRunPhase: null,
   secretCampaignId: null,
   jotaroAwakened: false,
-  player: { x: 250, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null },
+  player: { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null },
   enemies: [],
   cooldowns: {},
   effects: [],
@@ -313,9 +313,23 @@ function updateStoryPanel() {
     text = campaign.openEnded
       ? 'Os capítulos representados neste protótipo foram concluídos. The JOJOLands permanece sem um desfecho definitivo; esta campanha pode receber novas fases.'
       : `A jornada de ${campaign.protagonist} chegou ao seu encerramento. O próximo protagonista está disponível.`;
-    objective = save.story.secretUnlocked ? 'As nove campanhas estão completas. A história secreta foi liberada.' : 'Seu progresso está salvo. Escolha o protagonista liberado para continuar.';
-    actionLabel = 'VER PRÓXIMA ETAPA';
-    action.hidden = true;
+    const nextCampaign = campaigns.find((entry) => entry.part > campaign.part && save.story.unlockedCampaignIds.includes(entry.id));
+    if (nextCampaign) {
+      objective = `${nextCampaign.protagonist.toUpperCase()} · PARTE ${nextCampaign.part} DESBLOQUEADA`;
+      actionLabel = `CONTINUAR PARA ${nextCampaign.protagonist.toUpperCase()}`;
+      action.hidden = false;
+      action.disabled = false;
+    } else if (save.story.secretUnlocked) {
+      objective = 'As nove campanhas estão completas. A história secreta foi liberada.';
+      actionLabel = 'INICIAR HISTÓRIA SECRETA';
+      action.hidden = false;
+      action.disabled = false;
+    } else {
+      objective = 'Seu progresso está salvo. A próxima campanha será liberada ao concluir esta jornada.';
+      actionLabel = 'CAMPANHA CONCLUÍDA';
+      action.hidden = false;
+      action.disabled = true;
+    }
   } else {
     location = stage.location.toUpperCase();
     switch (progress.phase) {
@@ -415,7 +429,7 @@ function interactWithStoryObjective() {
   const stage = state.storyStage;
   if (!stage || progress.phase !== STORY_PHASES.OBJECTIVE_ACTIVE) return;
   const objective = stage.objective;
-  if (distance(state.player, objective) > 86) {
+  if (distance(state.player, objective) > 180) {
     showToast('Aproxime-se do marcador para investigar.');
     return;
   }
@@ -449,7 +463,7 @@ function continueSecretStory() {
     state.player.hp = state.player.maxHp;
     state.player.energy = state.player.maxEnergy;
     state.cooldowns = {};
-    state.player.x = 250;
+    state.player.x = 380;
     state.player.y = 320;
     if (save.story.secretStageIndex < campaigns.length) {
       state.secretCampaignId = campaigns[save.story.secretStageIndex].id;
@@ -492,6 +506,22 @@ function continueStory() {
   const campaign = selectedCampaign();
   const progress = currentCampaignProgress();
   const stage = state.storyStage;
+  if (!stage && progress.phase === STORY_PHASES.CAMPAIGN_COMPLETE) {
+    const nextCampaign = campaigns.find((entry) => entry.part > campaign.part && save.story.unlockedCampaignIds.includes(entry.id));
+    if (nextCampaign) {
+      const nextCharacterIndex = characters.findIndex((character) => character.id === nextCampaign.id);
+      if (nextCharacterIndex >= 0) {
+        state.selected = nextCharacterIndex;
+        resetBattle('campaign');
+        $('#battle-message').textContent = `${nextCampaign.protagonist} inicia sua campanha.`;
+      }
+      return;
+    }
+    if (save.story.secretUnlocked) {
+      switchMode('final');
+      return;
+    }
+  }
   if (!stage) return;
 
   switch (progress.phase) {
@@ -525,6 +555,8 @@ function continueStory() {
       const wasFinalStage = progress.stageIndex === campaign.stages.length - 1;
       if (!completeStage(progress, campaign)) return;
       if (wasFinalStage) {
+        // completeStage moves the campaign to CAMPAIGN_COMPLETE; the unlock
+        // helper checks that phase before granting access to the next part.
         unlockCampaignAfterCompletion(save, campaign, campaigns);
         if (save.story.secretUnlocked) showUnlock('HISTÓRIA SECRETA DESBLOQUEADA');
         else {
@@ -538,7 +570,7 @@ function continueStory() {
         attachPhysicsBodies();
       } else {
         state.storyStage = currentCampaignStage();
-        state.player.x = 250;
+        state.player.x = 380;
         state.player.y = 320;
         state.enemies = [];
         state.fightActive = false;
@@ -707,7 +739,7 @@ function resetBattle(mode = state.mode) {
   state.secretRunPhase = null;
   state.secretCampaignId = null;
   state.jotaroAwakened = false;
-  state.player = { x: 250, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null };
+  state.player = { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null };
   state.cooldowns = {};
   state.effects = [];
   state.particles = [];
@@ -733,6 +765,7 @@ function resetBattle(mode = state.mode) {
   }
   updateInterface(true);
   buildRoster();
+  loadSpritesInBackground([selectedCharacter().spriteAsset]);
 }
 
 function selectCharacter(index) {
@@ -1135,8 +1168,10 @@ function update(dt, timestamp) {
   state.player.attackTimer = Math.max(0, state.player.attackTimer - dt);
   state.player.hitFlash = Math.max(0, state.player.hitFlash - dt);
 
-  const exploring = state.mode === 'campaign' && currentCampaignProgress().phase === STORY_PHASES.OBJECTIVE_ACTIVE;
-  if ((state.fightActive || exploring) && timestamp >= state.cinematicUntil) {
+  const campaignPhase = state.mode === 'campaign' ? currentCampaignProgress().phase : null;
+  const exploring = campaignPhase === STORY_PHASES.OBJECTIVE_ACTIVE;
+  const campaignFinished = campaignPhase === STORY_PHASES.CAMPAIGN_COMPLETE;
+  if ((state.fightActive || exploring || campaignFinished) && timestamp >= state.cinematicUntil) {
     const player = state.player;
     if (player.physicsZone) {
       player.x = player.physicsZone.x;
@@ -1704,7 +1739,12 @@ function updateInterface(force = false) {
 function handleKeyDown(event) {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
   const key = event.key.toLowerCase();
-  if (['w', 'a', 's', 'd', 'f', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', ' ', 'j', '1', '2', '3', '4'].includes(key)) event.preventDefault();
+  if (['w', 'a', 's', 'd', 'f', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', ' ', 'j', '1', '2', '3', '4', 'enter'].includes(key)) event.preventDefault();
+  const storyAction = $('#story-action');
+  if (!event.repeat && (key === 'enter' || key === ' ') && !state.fightActive && !storyAction.hidden && !storyAction.disabled) {
+    continueStory();
+    return;
+  }
   state.keys.add(key);
   if (!event.repeat && (key === 'j' || key === ' ')) performBasicAttack();
   if (!event.repeat && /^[1-4]$/.test(key)) useSkill(Number(key) - 1);
@@ -1759,7 +1799,10 @@ class BattleScene extends Phaser.Scene {
     resetBattle('campaign');
     $('#battle-message').textContent = `${selectedCharacter().name} enfrenta ${selectedCharacter().boss}. Derrote o chefe para liberar um novo poder.`;
     this.renderInitialFrame();
-    this.loadSpritesInBackground();
+    loadSpritesInBackground([
+      selectedCharacter().spriteAsset,
+      ...(state.storyStage?.enemies.map((enemy) => enemySpriteAsset(enemy, selectedCampaign())) || []),
+    ]);
   }
 
   renderInitialFrame() {
@@ -1768,23 +1811,6 @@ class BattleScene extends Phaser.Scene {
       arenaTexture.refresh();
     } catch (error) {
       this.reportRenderError(error);
-    }
-  }
-
-  async loadSpritesInBackground() {
-    try {
-      const loadedSprites = await loadSpriteImages((loaded, total) => {
-        if (loaded % 12 === 0 || loaded === total) $('#battle-message').textContent = `CARREGANDO RETRATOS · ${Math.floor(loaded / total * 100)}%`;
-      });
-      loadedSprites.forEach((sprite, key) => {
-        preparedSprites.set(key, sprite);
-        if (!this.textures.exists(key)) this.textures.addCanvas(key, sprite);
-      });
-      updateInterface(true);
-      $('#battle-message').textContent = `${selectedCharacter().name} enfrenta ${selectedCharacter().boss}. Derrote o chefe para liberar um novo poder.`;
-    } catch (error) {
-      console.error('Não foi possível carregar os retratos; usando os sprites de fallback.', error);
-      $('#battle-message').textContent = 'Alguns retratos não carregaram; a luta continua com o visual de fallback.';
     }
   }
 

@@ -153,7 +153,30 @@ export function prepareSpriteImage(image, maxWidth = 256, maxHeight = 384) {
   }
 
   context.putImageData(pixels, 0, 0);
-  return canvas;
+  const depthCanvas = document.createElement('canvas');
+  depthCanvas.width = canvas.width + 14;
+  depthCanvas.height = canvas.height + 14;
+  const depthContext = depthCanvas.getContext('2d');
+  depthContext.imageSmoothingEnabled = false;
+  depthContext.filter = 'brightness(0.16) saturate(0)';
+  for (let depth = 12; depth >= 2; depth -= 2) {
+    depthContext.globalAlpha = 0.36;
+    depthContext.drawImage(canvas, 4 + depth, 2 + Math.round(depth * 0.42));
+  }
+  depthContext.filter = 'none';
+  depthContext.globalAlpha = 0.75;
+  depthContext.shadowColor = '#d8e7b5';
+  depthContext.shadowBlur = 3;
+  depthContext.shadowOffsetX = -2;
+  depthContext.shadowOffsetY = -2;
+  depthContext.drawImage(canvas, 4, 1);
+  depthContext.globalAlpha = 1;
+  depthContext.shadowColor = 'transparent';
+  depthContext.shadowBlur = 0;
+  depthContext.shadowOffsetX = 0;
+  depthContext.shadowOffsetY = 0;
+  depthContext.drawImage(canvas, 4, 1);
+  return depthCanvas;
 }
 
 function imageMimeType(bytes) {
