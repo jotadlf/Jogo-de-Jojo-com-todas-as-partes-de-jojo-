@@ -164,7 +164,7 @@ const state = {
   secretRunPhase: null,
   secretCampaignId: null,
   jotaroAwakened: false,
-  player: { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null },
+  player: { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, statuses: { freeze: 0, slow: 0, confuse: 0, burn: 0, burnTick: 0 }, physicsZone: null, body: null },
   enemies: [],
   cooldowns: {},
   effects: [],
@@ -198,8 +198,12 @@ function isOverHeaven() { return state.mode === 'final' && state.secretPhase ===
 function availableSkills() { return isOverHeaven() ? selectedCharacter().heavenSkills : selectedCharacter().skills; }
 function isUnlocked(skill, character = selectedCharacter()) {
   if (skill.tier === 'initial' || skill.tier === 'awakening') return skill.tier !== 'awakening' || (state.jotaroAwakened && character.id === 'jotaro' && state.mode === 'final' && state.secretPhase === 2);
-  if (skill.tier === 'advanced') return save.advanced.includes(character.id);
-  return save.supreme.includes(character.id) && state.mode === 'final' && state.secretPhase === 2;
+  const campaign = getCampaignForCharacter(character.id);
+  const progress = currentCampaignProgress(character.id);
+  if (skill.tier === 'advanced') return save.advanced.includes(character.id) || progress.stageIndex >= 2;
+  const campaignFinalStageReached = state.mode === 'campaign' && campaign && progress.stageIndex >= campaign.stages.length - 1;
+  const secretFinalPhaseReached = save.supreme.includes(character.id) && state.mode === 'final' && state.secretPhase === 2;
+  return Boolean(campaignFinalStageReached || secretFinalPhaseReached);
 }
 function persistSave() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(save)); } catch { showToast('O salvamento local está indisponível neste navegador.'); }
@@ -298,6 +302,12 @@ function updateStoryPanel() {
   const campaign = selectedCampaign();
   const progress = currentCampaignProgress();
   const stage = currentCampaignStage();
+  if (stage && !requiresInvestigation(campaign, stage) && [STORY_PHASES.EXPLORATION, STORY_PHASES.OBJECTIVE_ACTIVE].includes(progress.phase)) {
+    progress.phase = STORY_PHASES.ENEMY_ENCOUNTER;
+    const eventId = `skip-investigation:${stage.id}`;
+    if (!progress.processedEventIds.includes(eventId)) progress.processedEventIds.push(eventId);
+    persistSave();
+  }
   let kicker = `${campaign.protagonist.toUpperCase()} · PARTE ${campaign.part}`;
   let location = '';
   let title = '';
@@ -404,6 +414,10 @@ function updateStoryPanel() {
   $('#story-objective').textContent = objective;
   action.textContent = actionLabel;
   panel.hidden = false;
+}
+
+function requiresInvestigation(campaign, stage) {
+  return campaign.id === 'jonathan' && campaign.stages[0]?.id === stage.id;
 }
 
 function changeStoryPhase(nextPhase, eventId) {
@@ -526,7 +540,8 @@ function continueStory() {
 
   switch (progress.phase) {
     case STORY_PHASES.INTRO:
-      changeStoryPhase(STORY_PHASES.EXPLORATION, `enter:${stage.id}`);
+      if (requiresInvestigation(campaign, stage)) changeStoryPhase(STORY_PHASES.EXPLORATION, `enter:${stage.id}`);
+      else changeStoryPhase(STORY_PHASES.ENEMY_ENCOUNTER, `encounter:${stage.id}`);
       break;
     case STORY_PHASES.EXPLORATION:
       changeStoryPhase(STORY_PHASES.OBJECTIVE_ACTIVE, `explore:${stage.id}`);
@@ -553,7 +568,17 @@ function continueStory() {
       break;
     case STORY_PHASES.STAGE_COMPLETE: {
       const wasFinalStage = progress.stageIndex === campaign.stages.length - 1;
+      const completedStageIndex = progress.stageIndex;
+      const entersThirdStage = completedStageIndex === 1 && !save.advanced.includes(campaign.id);
+      const entersFinalBossStage = completedStageIndex === campaign.stages.length - 2 && !save.supreme.includes(campaign.id);
       if (!completeStage(progress, campaign)) return;
+      if (entersThirdStage) unlockAdvanced(selectedCharacter());
+      if (entersFinalBossStage) {
+        const message = entersThirdStage
+          ? `${selectedCharacter().skills[1].name} e ${selectedCharacter().skills[2].name} disponíveis`
+          : `${selectedCharacter().skills[2].name} disponível antes do chefe final`;
+        showUnlock(message);
+      }
       if (wasFinalStage) {
         // completeStage moves the campaign to CAMPAIGN_COMPLETE; the unlock
         // helper checks that phase before granting access to the next part.
@@ -605,6 +630,74 @@ function buildRoster() {
 
 function currentBossTemplate() { return bosses[state.selected]; }
 const allyNames = new Set(['will a. zeppeli', 'noriaki kakyoin', 'avdol', 'jean pierre polnareff', 'bruno bucciarati', 'foo fighters']);
+const normalizeVillainName = (name) => String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const villainPowers = Object.freeze({
+  dio: 'time-stop', diobrando: 'time-stop', diooverheaven: 'reality-overwrite', jackoestripador: 'vampirism',
+  bruford: 'sword', tarkus: 'strength',
+  santana: 'absorption', esidisi: 'heat', wamuu: 'wind', kars: 'ultimate-lifeform',
+  ndoul: 'water', danieljdarby: 'soul-gamble', telencetdarby: 'soul-gamble', vanillaice: 'void',
+  yoshikagekira: 'bomb', kira: 'bomb', diavolo: 'erase-time', enricopucci: 'acceleration', pucci: 'acceleration',
+  funnyvalentine: 'dimension', tooru: 'calamity', wonderofu: 'calamity',
+  angelo: 'water', formaggio: 'shrink', illuso: 'mirror', prosciutto: 'aging', ghiaccio: 'ice',
+  risotto: 'metal', cioccolata: 'mold', blackmore: 'rain', rikiel: 'rods', sportsmaxx: 'zombie',
+  anjuro: 'water', keichonijimura: 'army', akiraotoishi: 'electricity', yukakoyamagishi: 'hair',
+  rohan: 'heavens-door', shigechi: 'swarm', pesci: 'fishing-line', melone: 'tracking', blacksabbath: 'shadows', polpo: 'shadows',
+  notoriousbig: 'devour', diegobrando: 'dinosaur', diegobrandoalternativo: 'dinosaur', ringoroadagain: 'time-rewind',
+  yotsuyuyagiyama: 'attraction', tamakidamo: 'vitaminc', poortom: 'ozone', aishodainenjiyama: 'leaves',
+  versus: 'terrain', johngallia: 'sniper', noriakikakyoin: 'emeralds',
+  gwess: 'shrink',
+});
+const villainPowerProfiles = Object.freeze({
+  'time-stop': { windup: 0.3, radius: 88, damage: 1.2, status: 'freeze' },
+  'reality-overwrite': { windup: 0.25, radius: 108, damage: 1.35, status: 'confuse' },
+  absorption: { windup: 0.44, radius: 68, damage: 1.05, status: 'absorb' },
+  heat: { windup: 0.58, radius: 104, damage: 0.9, status: 'burn' },
+  wind: { windup: 0.56, radius: 128, damage: 1.12, status: 'slow' },
+  'ultimate-lifeform': { windup: 0.4, radius: 84, damage: 1.24, status: 'burn' },
+  water: { windup: 0.58, radius: 120, damage: 0.9, status: 'slow' },
+  'soul-gamble': { windup: 0.5, radius: 76, damage: 1, status: 'confuse' },
+  void: { windup: 0.34, radius: 94, damage: 1.45, status: 'freeze' },
+  bomb: { windup: 0.72, radius: 128, damage: 1.3, status: 'burn' },
+  'erase-time': { windup: 0.18, radius: 78, damage: 1.45, status: 'freeze' },
+  acceleration: { windup: 0.42, radius: 92, damage: 0.9, interval: 0.72, status: 'slow' },
+  dimension: { windup: 0.42, radius: 82, damage: 1.08, status: 'confuse' },
+  calamity: { windup: 0.52, radius: 104, damage: 1.08, status: 'calamity' },
+  shrink: { windup: 0.48, radius: 88, damage: 0.85, status: 'slow' },
+  mirror: { windup: 0.4, radius: 96, damage: 1.05, status: 'confuse' },
+  aging: { windup: 0.48, radius: 106, damage: 0.95, status: 'slow' },
+  ice: { windup: 0.6, radius: 110, damage: 1.05, status: 'freeze' },
+  metal: { windup: 0.42, radius: 86, damage: 1.1, status: 'burn' },
+  mold: { windup: 0.6, radius: 115, damage: 0.8, status: 'burn' },
+  rain: { windup: 0.55, radius: 112, damage: 0.9, status: 'slow' },
+  rods: { windup: 0.34, radius: 90, damage: 1.1, status: 'slow' },
+  zombie: { windup: 0.48, radius: 86, damage: 0.95, status: 'burn' },
+  arrows: { windup: 0.54, radius: 108, damage: 1.05, status: 'slow' },
+  electricity: { windup: 0.36, radius: 100, damage: 1.08, status: 'freeze' },
+  vampirism: { windup: 0.32, radius: 80, damage: 1.08, status: 'absorb' },
+  sword: { windup: 0.62, radius: 105, damage: 1.2, status: 'slow' },
+  strength: { windup: 0.78, radius: 72, damage: 1.4, status: 'slow' },
+  hair: { windup: 0.5, radius: 112, damage: 0.9, status: 'slow' },
+  'heavens-door': { windup: 0.46, radius: 90, damage: 0.8, status: 'confuse' },
+  swarm: { windup: 0.3, radius: 124, damage: 0.75, interval: 0.72, status: 'slow' },
+  'fishing-line': { windup: 0.44, radius: 118, damage: 0.92, status: 'slow' },
+  tracking: { windup: 0.42, radius: 102, damage: 1.05, status: 'confuse' },
+  shadows: { windup: 0.62, radius: 112, damage: 1.08, status: 'freeze' },
+  devour: { windup: 0.26, radius: 120, damage: 1.25, status: 'absorb' },
+  dinosaur: { windup: 0.28, radius: 100, damage: 1.12, interval: 0.78, status: 'slow' },
+  'time-rewind': { windup: 0.28, radius: 90, damage: 1.05, status: 'confuse' },
+  attraction: { windup: 0.42, radius: 112, damage: 0.92, status: 'slow' },
+  vitaminc: { windup: 0.54, radius: 100, damage: 0.82, status: 'freeze' },
+  ozone: { windup: 0.66, radius: 118, damage: 1.08, status: 'slow' },
+  leaves: { windup: 0.3, radius: 108, damage: 0.96, status: 'confuse' },
+  terrain: { windup: 0.48, radius: 118, damage: 1.08, status: 'slow' },
+  sniper: { windup: 0.82, radius: 145, damage: 1.25, status: 'slow' },
+  emeralds: { windup: 0.44, radius: 115, damage: 1.04, status: 'slow' },
+  army: { windup: 0.3, radius: 120, damage: 0.85, interval: 0.72, status: 'slow' },
+});
+function villainPowerFor(name, campaign) {
+  if (campaign?.id === 'jonathan' && normalizeVillainName(name).includes('dio')) return 'vampirism';
+  return villainPowers[normalizeVillainName(name)] || null;
+}
 function enemySpriteAsset(enemy, campaign = selectedCampaign()) {
   const names = [enemy.name, enemy.id];
   if (campaign?.id === 'jotaro' && enemy.name.toLowerCase() === 'dio') names.push('Dio_3');
@@ -619,6 +712,10 @@ function createCampaignBoss(stage = state.storyStage) {
   const templates = stage?.enemies || [currentBossTemplate()];
   state.enemies = templates.map((template) => ({
     ...template,
+    power: stage?.id === campaign.stages.at(-1)?.id
+      && normalizeVillainName(template.name) === normalizeVillainName(campaign.secretBoss)
+      ? villainPowerFor(template.name, campaign)
+      : null,
     spriteAsset: enemySpriteAsset(template, campaign),
     hp: template.hp,
     maxHp: template.hp,
@@ -648,6 +745,7 @@ function createFinalBosses(secondPhase = false) {
     marked: 0,
     hitFlash: 0,
     empowered: secondPhase,
+    power: boss.id === 'dio-heaven' ? 'reality-overwrite' : 'acceleration',
     pattern: 'temporal',
     attackRange: 125,
     attackDamage: secondPhase ? 24 : 12,
@@ -668,6 +766,7 @@ function createSecretRevengeBoss() {
   state.storyStage = campaign.stages.at(-1);
   state.enemies = [{
     ...encounter,
+    power: villainPowerFor(campaign.secretBoss, campaign),
     spriteAsset: enemySpriteAsset({ ...encounter, name: campaign.secretBoss }, campaign),
     x: 710,
     y: 260,
@@ -739,7 +838,7 @@ function resetBattle(mode = state.mode) {
   state.secretRunPhase = null;
   state.secretCampaignId = null;
   state.jotaroAwakened = false;
-  state.player = { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, physicsZone: null, body: null };
+  state.player = { x: 380, y: 320, facingX: 1, facingY: 0, hp: 100, maxHp: 100, energy: 100, maxEnergy: 100, attackTimer: 0, hitFlash: 0, statuses: { freeze: 0, slow: 0, confuse: 0, burn: 0, burnTick: 0 }, physicsZone: null, body: null };
   state.cooldowns = {};
   state.effects = [];
   state.particles = [];
@@ -897,11 +996,11 @@ function useSkill(slot) {
   const skill = availableSkills()[slot];
   if (!skill || !state.fightActive || performance.now() < state.cinematicUntil) return;
   if (skill.tier === 'supreme' && !isUnlocked(skill)) {
-    showToast('Este poder desperta na segunda fase da batalha secreta.');
+    showToast(state.mode === 'campaign' ? 'Avance até a fase do chefe final para liberar este poder.' : 'Este poder desperta na segunda fase da batalha secreta.');
     return;
   }
   if (!isUnlocked(skill)) {
-    showToast('Derrote o chefe final desta parte para liberar este poder.');
+    showToast(skill.tier === 'advanced' ? 'Avance até a terceira fase desta campanha para liberar este poder.' : 'Este poder ainda está bloqueado.');
     return;
   }
   if (skill.tier === 'awakening' && !isUnlocked(skill)) {
@@ -1031,6 +1130,13 @@ function damageEnemy(enemy, amount, kind, guardBreak = false) {
   if (guardBreak) enemy.stun = Math.max(enemy.stun, 1.3);
   const color = kind.includes('rain') ? '#c6edf1' : isOverHeaven() ? '#f0d75a' : selectedCharacter().color;
   spawnBurst(enemy.x, enemy.y - 10, color, kind === 'basic' ? 'impact' : kind);
+  if (enemy.power === 'calamity' && enemy.hp > 0 && (enemy.calamityCooldown || 0) <= 0) {
+    enemy.calamityCooldown = 1.25;
+    state.player.hp = Math.max(0, state.player.hp - 4);
+    state.player.hitFlash = 0.2;
+    state.particles.push({ x: state.player.x, y: state.player.y - 35, text: 'CALAMIDADE', time: 0.8, color: '#bd83cb' });
+    if (state.player.hp <= 0) playerDefeated();
+  }
   if (amount >= 100) state.screenShake = 8;
 }
 
@@ -1158,6 +1264,7 @@ function update(dt, timestamp) {
         target.stun = Math.max(target.stun, 1.6);
         damageEnemy(target, effect.damage, 'trap-snap');
         spawnBurst(target.x, target.y, '#d3e85a', 'string-snare');
+        if (target.hp <= 0) checkBattleEnd();
       }
     }
   }
@@ -1167,6 +1274,17 @@ function update(dt, timestamp) {
   state.player.energy = Math.min(state.player.maxEnergy, state.player.energy + dt * 7.2);
   state.player.attackTimer = Math.max(0, state.player.attackTimer - dt);
   state.player.hitFlash = Math.max(0, state.player.hitFlash - dt);
+  const statuses = state.player.statuses;
+  for (const key of ['freeze', 'slow', 'confuse', 'burn']) statuses[key] = Math.max(0, statuses[key] - dt);
+  if (statuses.burn > 0 && state.fightActive) {
+    statuses.burnTick -= dt;
+    if (statuses.burnTick <= 0) {
+      statuses.burnTick = 0.65;
+      state.player.hp = Math.max(0, state.player.hp - 2);
+      state.player.hitFlash = 0.16;
+      if (state.player.hp <= 0) playerDefeated();
+    }
+  }
 
   const campaignPhase = state.mode === 'campaign' ? currentCampaignProgress().phase : null;
   const exploring = campaignPhase === STORY_PHASES.OBJECTIVE_ACTIVE;
@@ -1179,14 +1297,17 @@ function update(dt, timestamp) {
     }
     let moveX = Number(state.keys.has('d') || state.keys.has('arrowright')) - Number(state.keys.has('a') || state.keys.has('arrowleft'));
     let moveY = Number(state.keys.has('s') || state.keys.has('arrowdown')) - Number(state.keys.has('w') || state.keys.has('arrowup'));
+    if (player.statuses.freeze > 0) moveX = moveY = 0;
+    if (player.statuses.confuse > 0) { moveX *= -1; moveY *= -1; }
     const magnitude = Math.hypot(moveX, moveY) || 1;
     moveX /= magnitude;
     moveY /= magnitude;
     if (player.body) {
-      player.body.setVelocity(moveX * 190, moveY * 155);
+      player.body.setVelocity(moveX * 190 * (player.statuses.slow > 0 ? 0.55 : 1), moveY * 155 * (player.statuses.slow > 0 ? 0.55 : 1));
     } else if (moveX || moveY) {
-      player.x += moveX * 190 * dt;
-      player.y += moveY * 155 * dt;
+      const speedScale = player.statuses.slow > 0 ? 0.55 : 1;
+      player.x += moveX * 190 * speedScale * dt;
+      player.y += moveY * 155 * speedScale * dt;
     }
     if (moveX || moveY) {
       player.facingX = moveX;
@@ -1213,6 +1334,7 @@ function updateEnemy(enemy, dt) {
   enemy.slow = Math.max(0, enemy.slow - dt);
   enemy.marked = Math.max(0, enemy.marked - dt);
   enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
+  enemy.calamityCooldown = Math.max(0, (enemy.calamityCooldown || 0) - dt);
   if (enemy.stun > 0) {
     enemy.body?.setVelocity(0, 0);
     return;
@@ -1230,8 +1352,18 @@ function updateEnemy(enemy, dt) {
       const target = enemy.attackTarget;
       enemy.attackTarget = null;
       if (overlapsHitCircle(player, target.x, target.y, target.radius) && state.invulnerable <= 0) {
-        const damage = enemy.attackDamage || (enemy.empowered ? 24 : 8);
+        const profile = villainPowerProfiles[enemy.power] || {};
+        const damage = Math.round((enemy.attackDamage || (enemy.empowered ? 24 : 8)) * (profile.damage || 1));
         player.hp = Math.max(0, player.hp - damage);
+        const statuses = player.statuses;
+        if (profile.status === 'freeze') statuses.freeze = Math.max(statuses.freeze, enemy.power === 'time-stop' ? 0.62 : 0.35);
+        if (profile.status === 'slow') statuses.slow = Math.max(statuses.slow, 1.6);
+        if (profile.status === 'confuse') statuses.confuse = Math.max(statuses.confuse, 0.9);
+        if (profile.status === 'burn') { statuses.burn = Math.max(statuses.burn, 2.2); statuses.burnTick = Math.min(statuses.burnTick || 0.65, 0.65); }
+        if (profile.status === 'absorb') enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.ceil(damage * 0.32));
+        if (profile.status === 'calamity') statuses.slow = Math.max(statuses.slow, 1.1);
+        const powerLabel = { 'time-stop': 'TEMPO PARADO', 'reality-overwrite': 'SOBRESCRITA DA REALIDADE', absorption: 'ABSORÇÃO', heat: 'CALOR INTENSO', wind: 'LÂMINA DE VENTO', 'ultimate-lifeform': 'FORMA SUPREMA', water: 'ATAQUE AQUÁTICO', 'soul-gamble': 'JOGO DE ALMAS', void: 'VAZIO DIMENSIONAL', bomb: 'EXPLOSÃO', 'erase-time': 'TEMPO APAGADO', acceleration: 'ACELERAÇÃO TEMPORAL', dimension: 'DESLOCAMENTO DIMENSIONAL', calamity: 'CALAMIDADE', shrink: 'ENCOLHIMENTO', mirror: 'MUNDO DO ESPELHO', aging: 'ENVELHECIMENTO', ice: 'CONGELAMENTO', metal: 'LÂMINAS DE METAL', mold: 'MOFO', rain: 'CHUVA CORTANTE', rods: 'BARRAS DE LUZ', zombie: 'ZUMBIS', arrows: 'FLECHAS', electricity: 'DESCARGA ELÉTRICA', vampirism: 'VAMPIRISMO', sword: 'GOLPE DE ESPADA', strength: 'FORÇA BRUTA', hair: 'LAÇO DE CABELO', 'heavens-door': 'HEAVEN’S DOOR', swarm: 'ENXAME', 'fishing-line': 'LINHA DE PESCA', tracking: 'RASTREADOR', shadows: 'SOMBRA', devour: 'DEVORAR', dinosaur: 'SCARY MONSTERS', 'time-rewind': 'RETROCESSO TEMPORAL', attraction: 'ATRAÇÃO', vitaminc: 'VITAMIN C', ozone: 'OZÔNIO', leaves: 'FOLHAS CORTANTES', terrain: 'TERRENO ALTERADO', sniper: 'TIRO DE LONGO ALCANCE', emeralds: 'ESMERALDAS', army: 'BAD COMPANY' }[enemy.power];
+        if (powerLabel) state.particles.push({ x: player.x, y: player.y - 35, text: powerLabel, time: 0.75, color: '#f3d27a' });
         player.hitFlash = 0.3;
         state.invulnerable = 0.65;
         state.screenShake = 4;
@@ -1254,21 +1386,43 @@ function updateEnemy(enemy, dt) {
   } else {
     enemy.body?.setVelocity(0, 0);
   }
+  const powerProfile = villainPowerProfiles[enemy.power] || {};
   enemy.attackTimer -= dt;
   if (enemy.attackTimer <= 0 && distanceToPlayer < (enemy.attackRange || (enemy.empowered ? 150 : 82))) {
     const windupByPattern = { rapid: 0.2, rusher: 0.26, heavy: 0.72, ranged: 0.58, hazard: 0.78, trickster: 0.48, vampire: 0.64, temporal: 0.76, spatial: 0.68 };
-    const duration = windupByPattern[enemy.pattern] || 0.42;
+    const duration = powerProfile.windup || windupByPattern[enemy.pattern] || 0.42;
+    if (enemy.power === 'dimension') {
+      const teleportX = Phaser.Math.Clamp(player.x + (enemy.x < player.x ? 165 : -165), 64, 896);
+      const teleportY = Phaser.Math.Clamp(player.y + (enemy.y < player.y ? 92 : -92), 80, 500);
+      enemy.x = teleportX; enemy.y = teleportY;
+      if (enemy.physicsZone) { enemy.physicsZone.x = teleportX; enemy.physicsZone.y = teleportY; }
+      enemy.body?.setPosition(teleportX, teleportY);
+    }
+    const radius = powerProfile.radius || (ranged ? 77 : enemy.pattern === 'spatial' ? 92 : 58);
     enemy.attackWindup = duration;
-    enemy.attackTarget = { x: player.x, y: player.y, radius: ranged ? 77 : enemy.pattern === 'spatial' ? 92 : 58 };
-    enemy.attackTimer = enemy.attackInterval || (enemy.empowered ? 1.05 : 1.45);
-    state.effects.push({ type: 'enemy-warning', x: player.x, y: player.y, radius: enemy.attackTarget.radius, time: duration, maxTime: duration });
+    enemy.attackTarget = { x: player.x, y: player.y, radius, power: enemy.power };
+    enemy.attackTimer = (enemy.attackInterval || (enemy.empowered ? 1.05 : 1.45)) * (powerProfile.interval || 1);
+    state.effects.push({ type: `enemy-power-${enemy.power || enemy.pattern}`, x: player.x, y: player.y, radius, time: duration, maxTime: duration });
   }
 }
 
 function playerDefeated() {
+  if (!state.fightActive) return;
   state.fightActive = false;
-  showToast('Jotaro e seus aliados recuam. A batalha será reiniciada.');
-  $('#battle-message').textContent = 'Derrota. O confronto recomeçará em instantes.';
+  const defeatMessages = {
+    jonathan: 'Jonathan cai, mas o Hamon ainda pode virar o rumo do confronto.',
+    joseph: 'Joseph recua após uma surpresa do inimigo e já prepara uma nova estratégia.',
+    jotaro: 'Jotaro é forçado a recuar; Star Platinum voltará ao combate em instantes.',
+    josuke4: 'Josuke cai protegendo Morioh; Crazy Diamond está pronto para tentar de novo.',
+    giorno: 'Giorno é derrubado, mas Gold Experience ainda pode mudar o destino da luta.',
+    jolyne: 'Jolyne recua por um momento; Stone Free voltará à batalha.',
+    johnny: 'Johnny perde o equilíbrio, mas ainda pode retomar o controle da situação.',
+    gappy: 'Gappy é surpreendido, mas Soft & Wet terá outra chance de virar a luta.',
+    jodio: 'Jodio recua diante da pressão; November Rain voltará a cair sobre o inimigo.',
+  };
+  const message = defeatMessages[selectedCharacter().id] || `${selectedCharacter().name} foi derrotado. O confronto recomeçará em instantes.`;
+  showToast(message);
+  $('#battle-message').textContent = message;
   window.setTimeout(() => {
     if (state.player.hp > 0) return;
     resetBattle(state.mode);
@@ -1584,6 +1738,10 @@ function drawEffects() {
       ctx.fillRect(x - 2, y - 3, 3, 3);
     } else {
       let color = selectedCharacter().color;
+      if (effect.type.startsWith('enemy-power-')) {
+        const power = effect.type.slice('enemy-power-'.length);
+        color = ({ 'time-stop': '#8bd4e5', 'erase-time': '#e68a58', acceleration: '#e6d45f', bomb: '#ed745d', calamity: '#bd83cb', heat: '#fa7a45', ice: '#a4e2f0', void: '#a89ad3', dimension: '#db94dd', water: '#5aafd0', wind: '#c5e69a', mold: '#8cb568' })[power] || '#e9bd6b';
+      }
       if (effect.type.includes('temporal') || effect.type.includes('heaven') || effect.type.includes('overwrite') || effect.type.includes('impact')) color = '#f2dd6a';
       if (effect.type.includes('time') || effect.type.includes('reality')) color = '#a7d3d3';
       if (effect.type.includes('hamon') || effect.type.includes('sunlight')) color = '#ffe387';
@@ -1718,7 +1876,7 @@ function updateInterface(force = false) {
   $('#power-row').innerHTML = skills.map((skill, index) => {
     const unlocked = isUnlocked(skill);
     const cooldown = state.cooldowns[skill.id] || 0;
-    const lockedText = skill.tier === 'advanced' ? 'DERROTE O CHEFE' : skill.tier === 'supreme' ? 'DESPERTA NA FASE 2' : skill.tier === 'awakening' ? 'STAR PLATINUM: OVER HEAVEN' : 'DISPONÍVEL';
+    const lockedText = skill.tier === 'advanced' ? 'LIBERA NA FASE 3' : skill.tier === 'supreme' ? 'LIBERA ANTES DO CHEFE FINAL' : skill.tier === 'awakening' ? 'STAR PLATINUM: OVER HEAVEN' : 'DISPONÍVEL';
     const status = cooldown > 0 ? `${cooldown.toFixed(1)} s · ${skill.energy} EN` : `${skill.range} P · ${skill.energy} EN`;
     return `<button type="button" class="power-slot${unlocked ? '' : ' locked'}" data-slot="${index}" ${unlocked && cooldown <= 0 && state.player.energy >= skill.energy && state.fightActive ? '' : 'disabled'} title="${skill.name} · ${unlocked ? `${skill.energy} energia, alcance ${skill.range}` : lockedText}"><span class="power-key">${index + 1}</span><strong>${skill.name}</strong><small>${unlocked ? status : lockedText}</small></button>`;
   }).join('');

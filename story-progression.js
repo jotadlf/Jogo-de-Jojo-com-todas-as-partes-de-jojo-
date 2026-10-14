@@ -12,7 +12,7 @@ export const STORY_PHASES = Object.freeze({
 });
 
 const phaseTransitions = Object.freeze({
-  INTRO: ['EXPLORATION'],
+  INTRO: ['EXPLORATION', 'ENEMY_ENCOUNTER'],
   EXPLORATION: ['OBJECTIVE_ACTIVE'],
   OBJECTIVE_ACTIVE: ['ENEMY_ENCOUNTER'],
   ENEMY_ENCOUNTER: ['BOSS_FIGHT'],
