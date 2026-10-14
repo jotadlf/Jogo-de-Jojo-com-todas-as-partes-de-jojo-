@@ -28,6 +28,7 @@ let arenaTexture;
 let gameScene;
 let physicsObjects = [];
 const preparedSprites = new Map();
+const pendingSpriteKeys = new Set();
 
 const makeSkill = (id, name, type, damage, range, energy, cooldown, duration, effect, animation, tier) => ({
   id, name, type, damage, range, energy, cooldown, duration, effect, animation, tier,
@@ -202,6 +203,27 @@ function isUnlocked(skill, character = selectedCharacter()) {
 }
 function persistSave() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(save)); } catch { showToast('O salvamento local está indisponível neste navegador.'); }
+}
+
+async function loadSpritesInBackground(assets) {
+  const missing = [...new Map(assets.filter((asset) => asset && !preparedSprites.has(asset.key) && !pendingSpriteKeys.has(asset.key)).map((asset) => [asset.key, asset])).values()];
+  if (missing.length === 0) return;
+  missing.forEach((asset) => pendingSpriteKeys.add(asset.key));
+  try {
+    const loadedSprites = await loadSpriteImages(missing, (loaded, total) => {
+      if (loaded === total) $('#battle-message').textContent = `RETRATOS CARREGADOS · ${total}`;
+    });
+    loadedSprites.forEach((sprite, key) => {
+      preparedSprites.set(key, sprite);
+      if (gameScene && !gameScene.textures.exists(key)) gameScene.textures.addCanvas(key, sprite);
+    });
+    buildRoster();
+    updateInterface(true);
+  } catch (error) {
+    console.error('Falha ao preparar alguns retratos; a arena mantém o fallback.', error);
+  } finally {
+    missing.forEach((asset) => pendingSpriteKeys.delete(asset.key));
+  }
 }
 
 function updateStoryPanel() {
@@ -577,6 +599,7 @@ function createCampaignBoss(stage = state.storyStage) {
     hitFlash: 0,
   }));
   attachPhysicsBodies();
+  loadSpritesInBackground(state.enemies.map((enemy) => enemy.spriteAsset));
 }
 function createFinalBosses(secondPhase = false) {
   const multiplier = secondPhase ? 3 : 1;
@@ -601,6 +624,7 @@ function createFinalBosses(secondPhase = false) {
     attackTarget: null,
   }));
   attachPhysicsBodies();
+  loadSpritesInBackground(state.enemies.map((enemy) => enemy.spriteAsset));
 }
 function currentSecretCampaign() { return campaigns.find((campaign) => campaign.id === state.secretCampaignId) || campaigns[save.story.secretStageIndex] || null; }
 function createSecretRevengeBoss() {
@@ -625,6 +649,7 @@ function createSecretRevengeBoss() {
     hitFlash: 0,
   }];
   attachPhysicsBodies();
+  loadSpritesInBackground(state.enemies.map((enemy) => enemy.spriteAsset));
   return true;
 }
 function prepareSecretMode() {

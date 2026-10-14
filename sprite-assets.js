@@ -163,9 +163,10 @@ function imageMimeType(bytes) {
   return 'application/octet-stream';
 }
 
-export async function loadSpriteImages(onProgress = () => {}) {
+export async function loadSpriteImages(requestedAssets = spriteAssets, onProgress = () => {}) {
+  const assets = [...new Map(requestedAssets.filter(Boolean).map((asset) => [asset.key, asset])).values()];
   const prepared = new Map();
-  const queue = [...spriteAssets];
+  const queue = [...assets];
   let completed = 0;
   const loadNext = async () => {
     while (queue.length) {
@@ -187,10 +188,10 @@ export async function loadSpriteImages(onProgress = () => {}) {
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
         completed += 1;
-        onProgress(completed, spriteAssets.length);
+        onProgress(completed, assets.length);
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(6, spriteAssets.length) }, () => loadNext()));
+  await Promise.all(Array.from({ length: Math.min(2, assets.length) }, () => loadNext()));
   return prepared;
 }

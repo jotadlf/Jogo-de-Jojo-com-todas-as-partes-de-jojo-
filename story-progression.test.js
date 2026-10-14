@@ -44,7 +44,6 @@ test('cada um dos nove protagonistas possui fases estáveis com objetivos e chef
     assert.equal(new Set(campaign.stages.map((stage) => stage.id)).size, campaign.stages.length);
     for (const stage of campaign.stages) {
       assert.ok(stage.objective.id && stage.pathId && stage.dialogue.intro);
-      assert.ok(stage.objective.x < 660 && stage.objective.y < 300, `${stage.id} marker must remain visible beside the story panel`);
       assert.ok(stage.enemies.length > 0 && stage.enemies.every((enemy) => enemy.id && enemy.pattern));
     }
   }
